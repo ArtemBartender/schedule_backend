@@ -133,6 +133,30 @@ def login():
     session.close()
     return jsonify({"msg": "Nieprawidłowy email lub hasło"}), 401
 
+# === ПРОСТОЙ ЭХО-ЗАГРУЗЧИК БЕЗ АВТОРИЗАЦИИ ===
+@app.post("/debug/upload")
+def debug_upload():
+    app.logger.info("DEBUG UPLOAD files=%s form=%s",
+                    list(request.files.keys()), request.form.to_dict())
+
+    if "file" not in request.files:
+        return jsonify(ok=False, error="missing field 'file'"), 422
+
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify(ok=False, error="empty filename"), 422
+    if not f.filename.lower().endswith(".pdf"):
+        return jsonify(ok=False, error="only .pdf allowed"), 422
+
+    # сохраняем во временную папку и возвращаем размер
+    import os
+    os.makedirs("/tmp/uploads", exist_ok=True)
+    save_path = os.path.join("/tmp/uploads", f.filename)
+    f.save(save_path)
+    size = os.path.getsize(save_path)
+    return jsonify(ok=True, filename=f.filename, bytes=size), 200
+
+
 @app.route('/schedule/upload', methods=['POST'])
 @admin_required()
 def upload_schedule():
@@ -302,5 +326,6 @@ if __name__ == '__main__':
         exit()
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
