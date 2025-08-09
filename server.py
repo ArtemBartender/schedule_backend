@@ -7,13 +7,28 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, JWTManager
 import pdfplumber
 
+
+from functools import wraps
+from flask_jwt_extended import get_jwt
+
+def admin_required():
+    def wrapper(fn):
+        @wraps(fn)
+        @jwt_required()
+        def decorator(*args, **kwargs):
+            claims = get_jwt()
+            if claims.get('role') == 'admin':
+                return fn(*args, **kwargs)
+            else:
+                return jsonify(msg="Admins only!"), 403
+        return decorator
+    return wrapper
 # --- НАСТРОЙКА И КОНФИГУРАЦИЯ ---
 
 app = Flask(__name__)
 
-# !!! ВАЖНО: Замените на ваш Connection String из Supabase !!!
-DATABASE_URI = 'postgresql://postgres:5Mj-WR9F-F_T8Rf@db.filrokjgmqwzansfnuey.supabase.co:5432/postgres'
-
+DATABASE_URI = os.environ.get('DATABASE_URI')
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY')
 # !!! ВАЖНО: Замените на любой сложный секретный ключ !!!
 app.config['JWT_SECRET_KEY'] = '0503010365Danon!' 
 
@@ -76,6 +91,13 @@ ALLOWED_EMAILS = {
     "k.janikiewicz@lot.pl"
 }
 
+ADMIN_EMAILS = {
+    "r.czajka@lot.pl",
+    "k.koszut-gawryszak@lot.pl",
+    "m.kaczmarski@lot.pl",
+    "a.bilenko@lot.pl",
+}
+
 # Словарь для определения часов по коду смены.
 SHIFT_HOURS = {
     "1": 9.5, "1/B": 9.5,
@@ -89,7 +111,8 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    full_name = Column(String, unique=True, nullable=False) # Имя, как в графике PDF
+    full_name = Column(String, unique=True, nullable=False)
+    role = Column(String, default='user', nullable=False) # <-- ДОБАВЬ ЭТУ СТРОКУ
     shifts = relationship('Shift', back_populates='user')
 
     def set_password(self, password):
@@ -127,6 +150,8 @@ def register():
        session.query(User).filter_by(full_name=full_name).first():
         session.close()
         return jsonify({"msg": "User with this email or name already exists"}), 409
+    if email.lower() in ADMIN_EMAILS:
+        new_user.role = 'admin'
 
     new_user = User(email=email, full_name=full_name)
     new_user.set_password(password)
@@ -146,13 +171,15 @@ def login():
     session.close()
 
     if user and user.check_password(password):
-        access_token = create_access_token(identity=user.id)
+       additional_claims = {"role": user.role}
+       access_token = create_access_token(identity=user.id, additional_claims=additional_claims)
+        
         return jsonify(access_token=access_token)
     
     return jsonify({"msg": "Bad email or password"}), 401
 
 @app.route('/schedule/upload', methods=['POST'])
-@jwt_required() # Этот эндпоинт теперь защищен
+@admin_required() # Этот эндпоинт теперь защищен
 def upload_schedule():
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
