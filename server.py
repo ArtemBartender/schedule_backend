@@ -127,7 +127,7 @@ def login():
     user = session.query(User).filter_by(email=email).first()
     if user and user.check_password(password):
         additional_claims = {"role": user.role}
-        access_token = create_access_token(identity=user.id, additional_claims=additional_claims)
+        access_token = create_access_token(identity=str(user.id), additional_claims=additional_claims)
         session.close()
         return jsonify(access_token=access_token)
     session.close()
@@ -216,3 +216,4 @@ if __name__ == '__main__':
         exit()
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
