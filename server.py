@@ -231,7 +231,7 @@ def login():
         user = session.query(User).filter_by(email=email).first()
         if user and user.check_password(password):
             additional_claims = {"role": user.role}
-            token = create_access_token(identity=user.id, additional_claims=additional_claims)
+            token = create_access_token(identity=str(user.id), additional_claims=additional_claims)
             return jsonify(access_token=token)
         return jsonify({"msg": "Nieprawidłowy email lub hasło"}), 401
     finally:
@@ -407,7 +407,7 @@ def me_shifts():
 
     Возвращает список смен с полями isCoordinator/colorHex.
     """
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     d_from = request.args.get('from')
     d_to = request.args.get('to')
 
@@ -479,7 +479,7 @@ def create_swap():
       }
     Владелец from_shift_id должен быть текущим пользователем.
     """
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     data = request.get_json() or {}
     from_shift_id = data.get('from_shift_id')
     to_shift_id = data.get('to_shift_id')  # может быть None — односторонняя передача
@@ -533,7 +533,7 @@ def create_swap():
 @app.route('/swaps/incoming', methods=['GET'])
 @jwt_required()
 def swaps_incoming():
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     session = Session()
     try:
         items = session.query(SwapRequest).filter_by(to_user_id=uid).order_by(SwapRequest.created_at.desc()).all()
@@ -545,7 +545,7 @@ def swaps_incoming():
 @app.route('/swaps/outgoing', methods=['GET'])
 @jwt_required()
 def swaps_outgoing():
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     session = Session()
     try:
         items = session.query(SwapRequest).filter_by(from_user_id=uid).order_by(SwapRequest.created_at.desc()).all()
@@ -616,7 +616,7 @@ def _perform_accept(session, swap: SwapRequest, actor_user_id: int):
 @app.route('/swaps/<int:swap_id>/accept', methods=['POST'])
 @jwt_required()
 def swap_accept(swap_id: int):
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     session = Session()
     try:
         swap = session.query(SwapRequest).filter_by(id=swap_id).first()
@@ -644,7 +644,7 @@ def swap_accept(swap_id: int):
 @app.route('/swaps/<int:swap_id>/decline', methods=['POST'])
 @jwt_required()
 def swap_decline(swap_id: int):
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     session = Session()
     try:
         swap = session.query(SwapRequest).filter_by(id=swap_id).first()
@@ -668,7 +668,7 @@ def swap_decline(swap_id: int):
 @app.route('/swaps/<int:swap_id>/cancel', methods=['POST'])
 @jwt_required()
 def swap_cancel(swap_id: int):
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     session = Session()
     try:
         swap = session.query(SwapRequest).filter_by(id=swap_id).first()
