@@ -263,197 +263,142 @@ def login():
 @admin_required()
 def upload_schedule():
     """
-    Ожидается имя файла: *_RRRR_MM.pdf
-    - чистим смены за месяц
-    - парсим все страницы по линиям (pdfplumber.extract_tables)
-    - нормализуем шапку (дни 1..31) и строки сотрудников
-    - игнорируем служебные строки (Nazwisko i imię / PLAN / BRAKI)
+    Лёгкий и стабильный парсер первой страницы.
+    Имя файла: *_RRRR_MM.pdf
     """
-    import re  # локальный импорт, чтобы не трогать верх файла
-    import io
-    
-# --- PDF parser helpers (top-level, no indent) ---
-import re
-import io
-
-_TABLE_SETTINGS = {
-    "vertical_strategy": "lines",
-    "horizontal_strategy": "lines",
-    "snap_tolerance": 3,
-    "join_tolerance": 3,
-    "edge_min_length": 20,
-    "min_words_vertical": 1,
-    "min_words_horizontal": 1,
-    "text_tolerance": 2,
-    "intersection_tolerance": 3,
-}
-
-def _norm_text(v) -> str:
-    if v is None:
-        return ""
-    s = str(v).replace("\n", " ").replace("\r", " ")
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
-
-def _norm_code(v) -> str:
-    s = str(v or "").replace("\n", "").replace(" ", "").upper()
-    s = s.replace(".", "")
-    return s
-
-def _parse_day_header(cell) -> int | None:
-    if cell is None:
-        return None
-    digits = re.findall(r"\d+", str(cell))
-    if not digits:
-        return None
-    try:
-        d = int(digits[0])
-        return d if 1 <= d <= 31 else None
-    except ValueError:
-        return None
-
-def _is_meta_row(name_cell: str) -> bool:
-    n = (name_cell or "").strip().lower()
-    return (
-        not n
-        or n.startswith("nazwisko")
-        or n.startswith("plan")
-        or n.startswith("braki")
-    )
-
-    # --- Проверяем наличие файла ---
     if 'file' not in request.files:
         return jsonify({"error": "Brak pliku"}), 400
 
-    file = request.files['file']
-    if not file or not file.filename:
+    up = request.files['file']
+    if not up or up.filename == '':
         return jsonify({"error": "Nie wybrano pliku"}), 400
 
-    # --- Год/месяц из имени файла ---
+    # RRRR_MM из имени файла
     try:
-        m = re.search(r'(\d{4})_(\d{1,2})\.pdf$', file.filename, re.IGNORECASE)
-        if not m:
-            raise ValueError("bad filename")
-        year = int(m.group(1))
-        month = int(m.group(2))
-        if not (1 <= month <= 12):
-            raise ValueError("bad month")
+        parts = up.filename.split('_')
+        year = int(parts[-2])
+        month = int(parts[-1].split('.')[0])
     except Exception:
         return jsonify({"error": "Nieprawidłowy format nazwy pliku. Oczekiwano 'nazwa_RRRR_MM.pdf'"}), 400
 
+    # Читаем PDF в память (устойчиво на Render)
+    try:
+        pdf_bytes = up.read()
+        if not pdf_bytes:
+            return jsonify({"error": "Plik jest pusty"}), 400
+        fobj = io.BytesIO(pdf_bytes)
+    except Exception as e:
+        return jsonify({"error": f"Nie udało się odczytać pliku: {e}"}), 400
+
     session = Session()
     try:
-        # --- Диапазон месяца ---
         start_date = datetime(year, month, 1).date()
         end_date = (start_date.replace(year=year + 1, month=1) - timedelta(days=1)) if month == 12 \
                    else (start_date.replace(month=month + 1) - timedelta(days=1))
 
-        # --- Чистим существующие смены за месяц (перезалив) ---
+        # чистим месяц
         session.query(Shift).filter(
             Shift.shift_date >= start_date,
             Shift.shift_date <= end_date
         ).delete(synchronize_session=False)
 
-        # --- Кеш пользователей по ФИО ---
         users_map = {u.full_name.strip(): u.id for u in session.query(User).all()}
-
         rows_added = 0
-        pages_scanned = 0
 
-        # --- Парсим все страницы (бывает, что таблица не влезает на одну) ---
-        with pdfplumber.open(file) as pdf:
-            for page in pdf.pages:
-                pages_scanned += 1
+        with pdfplumber.open(fobj) as pdf:
+            if not pdf.pages:
+                return jsonify({"error": "PDF nie zawiera stron"}), 400
+
+            page = pdf.pages[0]  # только первая страница
+
+            # пробуем “умные” настройки
+            try:
+                tables = page.extract_tables(table_settings=_TABLE_SETTINGS) or []
+            except TypeError:
+                # очень старая версия pdfplumber — минимальные ключи
+                legacy = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
+                tables = page.extract_tables(table_settings=legacy) or []
+            except Exception:
+                tables = []
+
+            # fallback на дефолтный распознаватель
+            if not tables:
                 try:
-    tables = page.extract_tables(table_settings=_TABLE_SETTINGS) or []
-except TypeError:
-    # очень старая версия pdfplumber — урезаем набор ключей
-    legacy = {
-        "vertical_strategy": "lines",
-        "horizontal_strategy": "lines",
-        "snap_tolerance": 3,
-        "join_tolerance": 3,
-        "edge_min_length": 20,
-        "min_words_vertical": 1,
-        "min_words_horizontal": 1,
-    }
-    tables = page.extract_tables(table_settings=legacy) or []
+                    t = page.extract_table()
+                    tables = [t] if t else []
+                except Exception:
+                    tables = []
 
-                if not tables:
+            if not tables:
+                return jsonify({"error": "Nie można znaleźć tabeli na pierwszej stronie PDF"}), 400
+
+            table = tables[0]
+            if not table or len(table) < 2:
+                return jsonify({"error": "Tabela jest pusta"}), 400
+
+            header = table[0]
+            data_rows = table[1:]
+
+            # дни 1..31
+            days = [None]
+            for c in header[1:]:
+                ds = ''.join(ch for ch in str(c or '') if ch.isdigit())
+                try:
+                    d = int(ds) if ds else None
+                except ValueError:
+                    d = None
+                days.append(d if d and 1 <= d <= 31 else None)
+
+            batch = 0
+            for r in data_rows:
+                if not r or not r[0]:
                     continue
 
-                for table in tables:
-                    if not table or len(table) < 2:
+                name = str(r[0]).replace('\n', ' ').strip()
+                low = name.lower()
+                if not name or low.startswith('nazwisko') or low.startswith('plan') or low.startswith('braki'):
+                    continue
+
+                uid = users_map.get(name)
+                if not uid:
+                    print(f"[UPLOAD] brak użytkownika w bazie: '{name}' — pomijam.")
+                    continue
+
+                for col_idx in range(1, min(len(r), len(days))):
+                    d = days[col_idx]
+                    if not d:
                         continue
 
-                    # 1) найдём строку-шапку с днями (обычно одна из первых)
-                    header_row = None
-                    for r in table[:3]:
-                        if not r:
-                            continue
-                        nums = [_parse_day_header(c) for c in r]
-                        if sum(1 for x in nums[1:] if x) >= 10:  # достаточно много валидных дней
-                            header_row = r
-                            break
-                    if header_row is None:
-                        header_row = table[0]
+                    code = (r[col_idx] or '').replace('\n', '').replace(' ', '').replace('.', '').upper()
+                    if not code:
+                        continue
 
-                    # вектор дней по колонкам (index -> day or None)
-                    day_by_col: list[int | None] = []
-                    for idx, cell in enumerate(header_row):
-                        day_by_col.append(None if idx == 0 else _parse_day_header(cell))
+                    if code in ('W', 'O', 'CH', 'X'):
+                        hours = 0.0
+                    elif code in ('1', '1/B', '2', '2/B', 'B'):
+                        hours = SHIFT_HOURS.get(code, 9.5 if code == 'B' else 0.0)
+                    else:
+                        continue
 
-                    # 2) строки сотрудников
-                    for r in table[1:]:
-                        if not r:
-                            continue
-                        name_raw = _norm_text(r[0])
-                        if _is_meta_row(name_raw):
-                            continue
-
-                        user_id = users_map.get(name_raw)
-                        if not user_id:
-                            print(f"[UPLOAD] Użytkownik '{name_raw}' nie znaleziony — pomijam.")
-                            continue
-
-                        # 3) по столбцам-дням
-                        for col_idx in range(1, min(len(r), len(day_by_col))):
-                            day = day_by_col[col_idx]
-                            if not day:
-                                continue  # это не день
-
-                            code = _norm_code(r[col_idx])
-                            if not code:
-                                continue
-
-                            # отсеиваем явный мусор
-                            allowed = {"1", "2", "1/B", "2/B", "W", "O", "CH", "B"}
-                            if code not in allowed:
-                                continue
-
-                            date_obj = datetime(year, month, day).date()
-
-                            # часы: берём из SHIFT_HOURS; если кода нет (например 'B') — падать нельзя
-                            hours = SHIFT_HOURS.get(code)
-                            if hours is None:
-                                # безопасный дефолт: считаем это рабочей сменой полной длины
-                                hours = SHIFT_HOURS.get('2/B', 9.5)
-
-                            session.add(Shift(
-                                user_id=user_id,
-                                shift_date=date_obj,
-                                shift_code=code,   # сохраняем как в PDF (после нормализации)
-                                hours=hours,
-                                is_coordinator=False,
-                                color_hex=None
-                            ))
-                            rows_added += 1
+                    session.add(Shift(
+                        user_id=uid,
+                        shift_date=datetime(year, month, d).date(),
+                        shift_code=code,
+                        hours=hours,
+                        is_coordinator=False,
+                        color_hex=None
+                    ))
+                    rows_added += 1
+                    batch += 1
+                    if batch >= 500:
+                        session.flush()
+                        batch = 0
 
         session.commit()
         return jsonify({
             "msg": "Grafik został wgrany i przetworzony pomyślnie",
             "rows_added": rows_added,
-            "pages_scanned": pages_scanned
+            "page_used": 1
         }), 200
 
     except Exception as e:
@@ -461,6 +406,7 @@ except TypeError:
         return jsonify({"error": str(e)}), 500
     finally:
         session.close()
+
 
 
 # =========================
@@ -827,6 +773,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
