@@ -271,6 +271,7 @@ def upload_schedule():
     """
     import re  # локальный импорт, чтобы не трогать верх файла
     import io
+    
 _TABLE_SETTINGS = {
         "vertical_strategy": "lines",
         "horizontal_strategy": "lines",
@@ -284,11 +285,11 @@ _TABLE_SETTINGS = {
 }
 
 
-    def _norm_text(v) -> str:
+def _norm_text(v) -> str:
         s = "" if v is None else str(v).replace("\n", " ").replace("\r", " ")
         return re.sub(r"\s+", " ", s).strip()
 
-    def _parse_day_header(cell) -> int | None:
+def _parse_day_header(cell) -> int | None:
         """В шапке могут быть артефакты типа '1\\n,0\\n8'. Достаём первое число 1..31."""
         if cell is None:
             return None
@@ -301,7 +302,7 @@ _TABLE_SETTINGS = {
         except ValueError:
             return None
 
-    def _norm_code(v) -> str:
+def _norm_code(v) -> str:
         """Код смены -> '1','2','1/B','2/B','W','O','CH','X','B' и т.п."""
         s = str(v or "").upper()
         s = s.replace("\n", "").replace(" ", "").replace(".", "").replace(",", "")
@@ -311,7 +312,7 @@ _TABLE_SETTINGS = {
             return "W"
         return s
 
-    def _is_meta_row(name_cell: str) -> bool:
+def _is_meta_row(name_cell: str) -> bool:
         n = (name_cell or "").strip().lower()
         return (
             not n
@@ -826,6 +827,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
