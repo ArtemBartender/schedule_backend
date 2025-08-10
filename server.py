@@ -260,91 +260,183 @@ def login():
 @admin_required()
 def upload_schedule():
     """
-    Ожидается имя файла в формате: <anything>_RRRR_MM.pdf
-    - чистим старые смены за месяц
-    - парсим первую страницу таблицы и заполняем shifts
-    - (TODO) определить цвет ячеек/координаторов и записать is_coordinator/color_hex
+    Ожидается имя файла: *_RRRR_MM.pdf
+    - чистим смены за месяц
+    - парсим все страницы по линиям (pdfplumber.extract_tables)
+    - нормализуем шапку (дни 1..31) и строки сотрудников
+    - игнорируем служебные строки (Nazwisko i imię / PLAN / BRAKI)
     """
+    import re  # локальный импорт, чтобы не трогать верх файла
+
+    # --- Настройки детектора таблиц (по линиям) ---
+    TABLE_SETTINGS = {
+        "vertical_strategy": "lines",
+        "horizontal_strategy": "lines",
+        "snap_tolerance": 3,
+        "join_tolerance": 3,
+        "edge_min_length": 20,
+        "min_words_vertical": 1,
+        "min_words_horizontal": 1,
+        "keep_blank_chars": False,
+        "text_tolerance": 2,
+    }
+
+    def _norm_text(v) -> str:
+        s = "" if v is None else str(v).replace("\n", " ").replace("\r", " ")
+        return re.sub(r"\s+", " ", s).strip()
+
+    def _parse_day_header(cell) -> int | None:
+        """В шапке могут быть артефакты типа '1\\n,0\\n8'. Достаём первое число 1..31."""
+        if cell is None:
+            return None
+        digits = re.findall(r"\d+", str(cell))
+        if not digits:
+            return None
+        try:
+            d = int(digits[0])
+            return d if 1 <= d <= 31 else None
+        except ValueError:
+            return None
+
+    def _norm_code(v) -> str:
+        """Код смены -> '1','2','1/B','2/B','W','O','CH','X','B' и т.п."""
+        s = str(v or "").upper()
+        s = s.replace("\n", "").replace(" ", "").replace(".", "").replace(",", "")
+        # частые варианты мусора мы отсекаем позже
+        # X считаем выходным (0 часов): сведём к W, чтобы не множить коды
+        if s == "X":
+            return "W"
+        return s
+
+    def _is_meta_row(name_cell: str) -> bool:
+        n = (name_cell or "").strip().lower()
+        return (
+            not n
+            or n.startswith("nazwisko")  # "Nazwisko i imię"
+            or n.startswith("plan")      # PLAN
+            or n.startswith("braki")     # BRAKI
+        )
+
+    # --- Проверяем наличие файла ---
     if 'file' not in request.files:
         return jsonify({"error": "Brak pliku"}), 400
 
     file = request.files['file']
-    if not file or file.filename == '':
+    if not file or not file.filename:
         return jsonify({"error": "Nie wybrano pliku"}), 400
 
-    # достаём год и месяц из имени файла
+    # --- Год/месяц из имени файла ---
     try:
-        filename_parts = file.filename.split('_')
-        year = int(filename_parts[-2])
-        month = int(filename_parts[-1].split('.')[0])
-    except (IndexError, ValueError):
+        m = re.search(r'(\d{4})_(\d{1,2})\.pdf$', file.filename, re.IGNORECASE)
+        if not m:
+            raise ValueError("bad filename")
+        year = int(m.group(1))
+        month = int(m.group(2))
+        if not (1 <= month <= 12):
+            raise ValueError("bad month")
+    except Exception:
         return jsonify({"error": "Nieprawidłowy format nazwy pliku. Oczekiwano 'nazwa_RRRR_MM.pdf'"}), 400
 
     session = Session()
     try:
-        # диапазон месяца
+        # --- Диапазон месяца ---
         start_date = datetime(year, month, 1).date()
-        if month == 12:
-            end_date = start_date.replace(year=year + 1, month=1) - timedelta(days=1)
-        else:
-            end_date = start_date.replace(month=month + 1) - timedelta(days=1)
+        end_date = (start_date.replace(year=year + 1, month=1) - timedelta(days=1)) if month == 12 \
+                   else (start_date.replace(month=month + 1) - timedelta(days=1))
 
-        # удаляем смены в этом месяце (пере-загрузка графика)
+        # --- Чистим существующие смены за месяц (перезалив) ---
         session.query(Shift).filter(
             Shift.shift_date >= start_date,
             Shift.shift_date <= end_date
         ).delete(synchronize_session=False)
 
-        # читаем таблицу из PDF
+        # --- Кеш пользователей по ФИО ---
+        users_map = {u.full_name.strip(): u.id for u in session.query(User).all()}
+
+        rows_added = 0
+        pages_scanned = 0
+
+        # --- Парсим все страницы (бывает, что таблица не влезает на одну) ---
         with pdfplumber.open(file) as pdf:
-            table = pdf.pages[0].extract_table()
-            # NOTE: если таблица на нескольких страницах — это место надо расширить
-
-        if not table or len(table) < 2:
-            return jsonify({"error": "Nie można znaleźć lub przetworzyć tabeli w PDF"}), 400
-
-        header = table[0]          # первая строка — шапка (номера дней)
-        employee_rows = table[1:]  # остальные — строки сотрудников
-
-        # Кеш пользователей: full_name -> id
-        users_map = {user.full_name: user.id for user in session.query(User).all()}
-
-        for row in employee_rows:
-            if not row or not row[0]:
-                continue
-            employee_name = row[0].strip()
-            user_id = users_map.get(employee_name)
-            if not user_id:
-                print(f"[WARN] Użytkownik '{employee_name}' nie znaleziony w bazie. Pomijam.")
-                continue
-
-            # проходим по дням и кодам смен
-            for day_str, shift_code in zip(header[1:], row[1:]):
-                if not day_str or not shift_code:
+            for page in pdf.pages:
+                pages_scanned += 1
+                tables = page.extract_tables(TABLE_SETTINGS) or []
+                if not tables:
                     continue
-                try:
-                    # иногда в day_str может быть "1\nPn." или "1." — очищаем
-                    day = int(float(day_str.split('\n')[0].strip().replace('.', '')))
-                    date_obj = datetime(year, month, day).date()
 
-                    code = str(shift_code).strip().upper()
-                    hours = SHIFT_HOURS.get(code, 0.0)
+                for table in tables:
+                    if not table or len(table) < 2:
+                        continue
 
-                    # TODO: извлечение цвета из PDF
-                    new_shift = Shift(
-                        user_id=user_id,
-                        shift_date=date_obj,
-                        shift_code=code,
-                        hours=hours,
-                        is_coordinator=False,
-                        color_hex=None
-                    )
-                    session.add(new_shift)
-                except (ValueError, TypeError, IndexError):
-                    continue
+                    # 1) найдём строку-шапку с днями (обычно одна из первых)
+                    header_row = None
+                    for r in table[:3]:
+                        if not r:
+                            continue
+                        nums = [_parse_day_header(c) for c in r]
+                        if sum(1 for x in nums[1:] if x) >= 10:  # достаточно много валидных дней
+                            header_row = r
+                            break
+                    if header_row is None:
+                        header_row = table[0]
+
+                    # вектор дней по колонкам (index -> day or None)
+                    day_by_col: list[int | None] = []
+                    for idx, cell in enumerate(header_row):
+                        day_by_col.append(None if idx == 0 else _parse_day_header(cell))
+
+                    # 2) строки сотрудников
+                    for r in table[1:]:
+                        if not r:
+                            continue
+                        name_raw = _norm_text(r[0])
+                        if _is_meta_row(name_raw):
+                            continue
+
+                        user_id = users_map.get(name_raw)
+                        if not user_id:
+                            print(f"[UPLOAD] Użytkownik '{name_raw}' nie znaleziony — pomijam.")
+                            continue
+
+                        # 3) по столбцам-дням
+                        for col_idx in range(1, min(len(r), len(day_by_col))):
+                            day = day_by_col[col_idx]
+                            if not day:
+                                continue  # это не день
+
+                            code = _norm_code(r[col_idx])
+                            if not code:
+                                continue
+
+                            # отсеиваем явный мусор
+                            allowed = {"1", "2", "1/B", "2/B", "W", "O", "CH", "B"}
+                            if code not in allowed:
+                                continue
+
+                            date_obj = datetime(year, month, day).date()
+
+                            # часы: берём из SHIFT_HOURS; если кода нет (например 'B') — падать нельзя
+                            hours = SHIFT_HOURS.get(code)
+                            if hours is None:
+                                # безопасный дефолт: считаем это рабочей сменой полной длины
+                                hours = SHIFT_HOURS.get('2/B', 9.5)
+
+                            session.add(Shift(
+                                user_id=user_id,
+                                shift_date=date_obj,
+                                shift_code=code,   # сохраняем как в PDF (после нормализации)
+                                hours=hours,
+                                is_coordinator=False,
+                                color_hex=None
+                            ))
+                            rows_added += 1
 
         session.commit()
-        return jsonify({"msg": "Grafik został wgrany i przetworzony pomyślnie"}), 200
+        return jsonify({
+            "msg": "Grafik został wgrany i przetworzony pomyślnie",
+            "rows_added": rows_added,
+            "pages_scanned": pages_scanned
+        }), 200
 
     except Exception as e:
         session.rollback()
@@ -717,4 +809,5 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
