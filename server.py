@@ -270,8 +270,8 @@ def upload_schedule():
     - игнорируем служебные строки (Nazwisko i imię / PLAN / BRAKI)
     """
     import re  # локальный импорт, чтобы не трогать верх файла
-
-     _TABLE_SETTINGS = {
+    import io
+_TABLE_SETTINGS = {
         "vertical_strategy": "lines",
         "horizontal_strategy": "lines",
         "snap_tolerance": 3,
@@ -281,7 +281,7 @@ def upload_schedule():
         "min_words_horizontal": 1,
         "text_tolerance": 2,
         "intersection_tolerance": 3,
-      }
+}
 
 
     def _norm_text(v) -> str:
@@ -826,6 +826,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
