@@ -49,8 +49,11 @@ if not DATABASE_URI or not JWT_SECRET_KEY:
     # локально можно раскомментировать и вставить свои значения
     # DATABASE_URI = "postgresql://USER:PASSWORD@HOST:PORT/DBNAME"
     # JWT_SECRET_KEY = "dev-secret"
+from datetime import timedelta
 
 app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=14)
+
 
 # Правильное подключение к Postgres в облаке (Supabase/Render)
 engine = create_engine(
@@ -65,6 +68,18 @@ engine = create_engine(
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 jwt = JWTManager(app)
+
+@jwt.unauthorized_loader
+def _missing_token(e):
+    return jsonify(error="Missing or invalid Authorization header"), 401
+
+@jwt.invalid_token_loader
+def _bad_token(e):
+    return jsonify(error=str(e)), 401
+
+@jwt.expired_token_loader
+def _expired(jwt_header, jwt_payload):
+    return jsonify(error="Token expired"), 401
 
 
 # =========================
@@ -702,3 +717,4 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
