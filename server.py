@@ -271,8 +271,7 @@ def upload_schedule():
     """
     import re  # локальный импорт, чтобы не трогать верх файла
 
-    # --- Настройки детектора таблиц (по линиям) ---
-    TABLE_SETTINGS = {
+     _TABLE_SETTINGS = {
         "vertical_strategy": "lines",
         "horizontal_strategy": "lines",
         "snap_tolerance": 3,
@@ -280,9 +279,10 @@ def upload_schedule():
         "edge_min_length": 20,
         "min_words_vertical": 1,
         "min_words_horizontal": 1,
-        "keep_blank_chars": False,
         "text_tolerance": 2,
-    }
+        "intersection_tolerance": 3,
+      }
+
 
     def _norm_text(v) -> str:
         s = "" if v is None else str(v).replace("\n", " ").replace("\r", " ")
@@ -363,7 +363,21 @@ def upload_schedule():
         with pdfplumber.open(file) as pdf:
             for page in pdf.pages:
                 pages_scanned += 1
-                tables = page.extract_tables(TABLE_SETTINGS) or []
+                try:
+    tables = page.extract_tables(table_settings=_TABLE_SETTINGS) or []
+except TypeError:
+    # очень старая версия pdfplumber — урезаем набор ключей
+    legacy = {
+        "vertical_strategy": "lines",
+        "horizontal_strategy": "lines",
+        "snap_tolerance": 3,
+        "join_tolerance": 3,
+        "edge_min_length": 20,
+        "min_words_vertical": 1,
+        "min_words_horizontal": 1,
+    }
+    tables = page.extract_tables(table_settings=legacy) or []
+
                 if not tables:
                     continue
 
@@ -812,6 +826,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
