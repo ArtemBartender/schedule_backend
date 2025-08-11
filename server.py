@@ -1,4 +1,6 @@
 import os
+import io
+
 from datetime import datetime, timedelta, date
 from functools import wraps
 
@@ -16,6 +18,8 @@ from flask_jwt_extended import (
 )
 
 import pdfplumber
+from flask_cors import CORS
+CORS(app, resources={r"/*": {"origins": "*"}})  # временно *, потом сузим
 
 
 # =========================
@@ -773,6 +777,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
