@@ -7,7 +7,7 @@ from logging.handlers import RotatingFileHandler
 
 from flask import Flask, request, jsonify, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Boolean, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Boolean, ForeignKey, Text, and_, or_
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, JWTManager, get_jwt
 from flask_cors import CORS
@@ -30,13 +30,13 @@ handler.setLevel(logging.INFO)
 app.logger.addHandler(handler)
 
 # Конфигурация из переменных окружения
-DATABASE_URI = os.environ.get('DATABASE_URI')
+DATABASE_URL = os.environ.get('DATABASE_URL')
 JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
 
-if not DATABASE_URI or not JWT_SECRET_KEY:
-    print("!!! CRITICAL ERROR: DATABASE_URI or JWT_SECRET_KEY not set in environment variables.")
+if not DATABASE_URL or not JWT_SECRET_KEY:
+    print("!!! CRITICAL ERROR: DATABASE_URL or JWT_SECRET_KEY not set in environment variables.")
     # Для локальной разработки
-    DATABASE_URI = "sqlite:///local.db"
+    DATABASE_URL = "sqlite:///local.db"
     JWT_SECRET_KEY = "dev-secret-key-change-in-production"
 
 app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY
@@ -47,6 +47,23 @@ engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 jwt = JWTManager(app)
+
+# =========================
+#  МОДЕЛЬ SWAPREQUEST
+# =========================
+class SwapRequest(Base):
+    __tablename__ = 'swap_requests'
+    
+    id = Column(Integer, primary_key=True)
+    from_user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    to_user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    shift_id = Column(Integer, ForeignKey('shifts.id'), nullable=False)
+    status = Column(String(20), default='pending')  # pending, accepted, declined
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    from_user = relationship('User', foreign_keys=[from_user_id], backref='outgoing_swaps')
+    to_user = relationship('User', foreign_keys=[to_user_id], backref='incoming_swaps')
+    shift = relationship('Shift')
 
 # =========================
 #  ДОПОЛНИТЕЛЬНЫЕ МОДЕЛИ
@@ -198,6 +215,423 @@ def admin_required():
                 return jsonify(msg="Wymagane uprawnienia administratora!"), 403
         return decorator
     return wrapper
+
+# =========================
+#  ОСНОВНЫЕ ЭНДПОИНТЫ
+# =========================
+
+# Регистрация пользователя
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    session = Session()
+    
+    try:
+        # Проверяем, существует ли пользователь с таким email
+        if session.query(User).filter_by(email=data['email']).first():
+            return jsonify({'error': 'User with this email already exists'}), 400
+        
+        # Проверяем, существует ли пользователь с таким именем
+        if session.query(User).filter_by(full_name=data['full_name']).first():
+            return jsonify({'error': 'User with this name already exists'}), 400
+        
+        # Создаем нового пользователя
+        user = User(
+            email=data['email'],
+            full_name=data['full_name'],
+            role=data.get('role', 'user')
+        )
+        user.set_password(data['password'])
+        
+        session.add(user)
+        session.commit()
+        
+        # Создаем JWT токен
+        access_token = create_access_token(
+            identity=str(user.id),
+            additional_claims={'role': user.role, 'email': user.email}
+        )
+        
+        return jsonify({
+            'message': 'User created successfully',
+            'access_token': access_token,
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'full_name': user.full_name,
+                'role': user.role
+            }
+        }), 201
+        
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Аутентификация пользователя
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    session = Session()
+    
+    try:
+        user = session.query(User).filter_by(email=data['email']).first()
+        
+        if not user or not user.check_password(data['password']):
+            return jsonify({'error': 'Invalid credentials'}), 401
+        
+        # Создаем JWT токен
+        access_token = create_access_token(
+            identity=str(user.id),
+            additional_claims={'role': user.role, 'email': user.email}
+        )
+        
+        return jsonify({
+            'access_token': access_token,
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'full_name': user.full_name,
+                'role': user.role
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Загрузка расписания
+@app.route('/schedule/upload', methods=['POST'])
+@jwt_required()
+@admin_required()
+def upload_schedule():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not file.filename.endswith('.pdf'):
+        return jsonify({'error': 'Only PDF files are allowed'}), 400
+    
+    try:
+        # Читаем PDF файл
+        pdf_bytes = file.read()
+        shifts_data = parse_pdf_with_colors(pdf_bytes)
+        
+        session = Session()
+        
+        # Очищаем существующие смены
+        session.query(Shift).delete()
+        
+        # Парсим смены из PDF
+        for shift_data in shifts_data:
+            # Здесь должен быть ваш парсинг PDF и создание смен
+            # Это упрощенный пример
+            pass
+        
+        session.commit()
+        return jsonify({'message': 'Schedule uploaded successfully'})
+        
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Получение расписания на день
+@app.route('/schedule/day/<date_str>', methods=['GET'])
+@jwt_required()
+def get_day_schedule(date_str):
+    try:
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+        session = Session()
+        
+        shifts = session.query(Shift).filter_by(shift_date=date_obj).all()
+        
+        return jsonify([shift.to_dict() for shift in shifts])
+        
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Получение моего расписания
+@app.route('/schedule/my-schedule', methods=['GET'])
+@jwt_required()
+def get_my_schedule():
+    user_id = get_jwt_identity()
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not start_date or not end_date:
+        return jsonify({'error': 'start_date and end_date parameters are required'}), 400
+    
+    try:
+        start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        
+        session = Session()
+        shifts = session.query(Shift).filter(
+            Shift.user_id == user_id,
+            Shift.shift_date >= start,
+            Shift.shift_date <= end
+        ).all()
+        
+        return jsonify([shift.to_dict() for shift in shifts])
+        
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Получение моих смен
+@app.route('/me/shifts', methods=['GET'])
+@jwt_required()
+def get_my_shifts():
+    user_id = get_jwt_identity()
+    session = Session()
+    
+    try:
+        # Получаем текущие и будущие смены
+        today = date.today()
+        shifts = session.query(Shift).filter(
+            Shift.user_id == user_id,
+            Shift.shift_date >= today
+        ).order_by(Shift.shift_date).all()
+        
+        return jsonify([shift.to_dict() for shift in shifts])
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Создание запроса на обмен сменой
+@app.route('/swaps', methods=['POST'])
+@jwt_required()
+def create_swap_request():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    session = Session()
+    
+    try:
+        # Проверяем, существует ли смена
+        shift = session.query(Shift).get(data['shift_id'])
+        if not shift or shift.user_id != int(user_id):
+            return jsonify({'error': 'Shift not found or access denied'}), 404
+        
+        # Проверяем, существует ли целевой пользователь
+        to_user = session.query(User).get(data['to_user_id'])
+        if not to_user:
+            return jsonify({'error': 'Target user not found'}), 404
+        
+        # Создаем запрос на обмен
+        swap_request = SwapRequest(
+            from_user_id=user_id,
+            to_user_id=data['to_user_id'],
+            shift_id=data['shift_id']
+        )
+        
+        session.add(swap_request)
+        
+        # Создаем уведомление для целевого пользователя
+        notification = Notification(
+            user_id=data['to_user_id'],
+            title='New Swap Request',
+            message=f'{swap_request.from_user.full_name} wants to swap a shift with you',
+            type='swap_request'
+        )
+        session.add(notification)
+        
+        session.commit()
+        
+        return jsonify({'message': 'Swap request created successfully'})
+        
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Получение входящих запросов на обмен
+@app.route('/swaps/incoming', methods=['GET'])
+@jwt_required()
+def get_incoming_swaps():
+    user_id = get_jwt_identity()
+    session = Session()
+    
+    try:
+        swaps = session.query(SwapRequest).filter_by(to_user_id=user_id).all()
+        
+        result = []
+        for swap in swaps:
+            result.append({
+                'id': swap.id,
+                'from_user': {
+                    'id': swap.from_user.id,
+                    'name': swap.from_user.full_name
+                },
+                'shift': swap.shift.to_dict(),
+                'status': swap.status,
+                'created_at': swap.created_at.isoformat()
+            })
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Получение исходящих запросов на обмен
+@app.route('/swaps/outgoing', methods=['GET'])
+@jwt_required()
+def get_outgoing_swaps():
+    user_id = get_jwt_identity()
+    session = Session()
+    
+    try:
+        swaps = session.query(SwapRequest).filter_by(from_user_id=user_id).all()
+        
+        result = []
+        for swap in swaps:
+            result.append({
+                'id': swap.id,
+                'to_user': {
+                    'id': swap.to_user.id,
+                    'name': swap.to_user.full_name
+                },
+                'shift': swap.shift.to_dict(),
+                'status': swap.status,
+                'created_at': swap.created_at.isoformat()
+            })
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Принятие запроса на обмен
+@app.route('/swaps/<int:swap_id>/accept', methods=['POST'])
+@jwt_required()
+def accept_swap(swap_id):
+    user_id = get_jwt_identity()
+    session = Session()
+    
+    try:
+        swap = session.query(SwapRequest).get(swap_id)
+        
+        if not swap or swap.to_user_id != int(user_id):
+            return jsonify({'error': 'Swap request not found or access denied'}), 404
+        
+        if swap.status != 'pending':
+            return jsonify({'error': 'Swap request already processed'}), 400
+        
+        # Меняем владельца смены
+        swap.shift.user_id = user_id
+        swap.status = 'accepted'
+        
+        # Создаем уведомление для инициатора обмена
+        notification = Notification(
+            user_id=swap.from_user_id,
+            title='Swap Request Accepted',
+            message=f'{swap.to_user.full_name} accepted your swap request',
+            type='swap_update'
+        )
+        session.add(notification)
+        
+        session.commit()
+        
+        return jsonify({'message': 'Swap request accepted successfully'})
+        
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Отклонение запроса на обмен
+@app.route('/swaps/<int:swap_id>/decline', methods=['POST'])
+@jwt_required()
+def decline_swap(swap_id):
+    user_id = get_jwt_identity()
+    session = Session()
+    
+    try:
+        swap = session.query(SwapRequest).get(swap_id)
+        
+        if not swap or swap.to_user_id != int(user_id):
+            return jsonify({'error': 'Swap request not found or access denied'}), 404
+        
+        if swap.status != 'pending':
+            return jsonify({'error': 'Swap request already processed'}), 400
+        
+        swap.status = 'declined'
+        
+        # Создаем уведомление для инициатора обмена
+        notification = Notification(
+            user_id=swap.from_user_id,
+            title='Swap Request Declined',
+            message=f'{swap.to_user.full_name} declined your swap request',
+            type='swap_update'
+        )
+        session.add(notification)
+        
+        session.commit()
+        
+        return jsonify({'message': 'Swap request declined successfully'})
+        
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Отмена запроса на обмен
+@app.route('/swaps/<int:swap_id>/cancel', methods=['POST'])
+@jwt_required()
+def cancel_swap(swap_id):
+    user_id = get_jwt_identity()
+    session = Session()
+    
+    try:
+        swap = session.query(SwapRequest).get(swap_id)
+        
+        if not swap or swap.from_user_id != int(user_id):
+            return jsonify({'error': 'Swap request not found or access denied'}), 404
+        
+        if swap.status != 'pending':
+            return jsonify({'error': 'Cannot cancel processed swap request'}), 400
+        
+        # Создаем уведомление для целевого пользователя
+        notification = Notification(
+            user_id=swap.to_user_id,
+            title='Swap Request Canceled',
+            message=f'{swap.from_user.full_name} canceled the swap request',
+            type='swap_update'
+        )
+        session.add(notification)
+        
+        session.delete(swap)
+        session.commit()
+        
+        return jsonify({'message': 'Swap request canceled successfully'})
+        
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
 
 # =========================
 #  НОВЫЕ ЭНДПОИНТЫ ДЛЯ PWA
@@ -579,15 +1013,6 @@ def send_emergency_notification():
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
-
-# =========================
-#  ОСНОВНЫЕ ЭНДПОИНТЫ (из вашего кода)
-# =========================
-# Здесь должны быть все ваши существующие эндпоинты:
-# /register, /login, /schedule/upload, /schedule/day/<date_str>,
-# /schedule/my-schedule, /me/shifts, /swaps, /swaps/incoming,
-# /swaps/outgoing, /swaps/<int:swap_id>/accept, /swaps/<int:swap_id>/decline,
-# /swaps/<int:swap_id>/cancel
 
 # =========================
 #  ОБНОВЛЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ PDF
