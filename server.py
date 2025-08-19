@@ -837,7 +837,7 @@ def handle_availabilities():
             
             return jsonify({'message': 'Availability updated successfully'})
     
-    except Exception as e:
+        except Exception as e:
             session.rollback()
             print(f"!!! LOGIN ERROR: {e}")
             traceback.print_exc() # Эта команда напечатает полный трейсбек
@@ -1234,6 +1234,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
