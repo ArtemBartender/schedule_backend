@@ -270,7 +270,7 @@ def register():
         session.close()
 
 # Аутентификация пользователя
-@app.route('/login', methods=['POST'])
+@app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
     session = Session()
@@ -1088,3 +1088,4 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
