@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 from functools import wraps
 from logging.handlers import RotatingFileHandler
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Boolean, ForeignKey, Text, and_, or_
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
@@ -1097,5 +1097,6 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
