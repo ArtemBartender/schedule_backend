@@ -285,9 +285,7 @@ def register():
         session.close()
 
 
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    Session.remove()
+
     
 # Аутентификация пользователя
 @app.route('/api/login', methods=['POST'])
@@ -1195,6 +1193,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
