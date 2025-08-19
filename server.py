@@ -1091,32 +1091,18 @@ def serve_static(path):
 
 
 
+from werkzeug.security import generate_password_hash
 
-@app.route('/reset_password', methods=['POST'])
-def reset_password():
+@app.route('/generate_hash', methods=['POST'])
+def generate_hash():
     data = request.get_json()
-    email = data.get('email')
-    new_password = data.get('new_password')
+    password = data.get('password')
     
-    if not email or not new_password:
-        return jsonify({'error': 'Email and new password are required'}), 400
+    if not password:
+        return jsonify({'error': 'Password is required'}), 400
     
-    session = Session()
-    try:
-        user = session.query(User).filter_by(email=email).first()
-        if user:
-            user.set_password(new_password)
-            session.commit()
-            return jsonify({'message': 'Password reset successfully'})
-        else:
-            return jsonify({'error': 'User not found'}), 404
-    except Exception as e:
-        session.rollback()
-        return jsonify({'error': str(e)}), 500
-    finally:
-        session.close()
-
-
+    password_hash = generate_password_hash(password)
+    return jsonify({'hash': password_hash})
 
 
 
@@ -1134,6 +1120,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
