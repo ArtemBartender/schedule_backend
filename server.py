@@ -283,11 +283,10 @@ def register():
             }
         }), 201
         
-    except Exception as e:
-        session.rollback()
-        return jsonify({'error': str(e)}), 500
-    finally:
-        session.close()
+         except Exception as e:
+            print(f"!!! LOGIN ERROR: {e}")
+            traceback.print_exc() # Эта команда напечатает полный трейсбек
+            return jsonify({"msg": "An error occurred"}), 500
 
 
 
@@ -361,9 +360,10 @@ def upload_schedule():
         session.commit()
         return jsonify({'message': 'Schedule uploaded successfully'})
         
-    except Exception as e:
-        session.rollback()
-        return jsonify({'error': str(e)}), 500
+     except Exception as e:
+            print(f"!!! LOGIN ERROR: {e}")
+            traceback.print_exc() # Эта команда напечатает полный трейсбек
+            return jsonify({"msg": "An error occurred"}), 500
     finally:
         session.close()
 
@@ -402,6 +402,8 @@ def get_schedule_by_date_range():
     except ValueError:
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
     except Exception as e:
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -432,6 +434,8 @@ def get_my_schedule():
     except ValueError:
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
     except Exception as e:
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -474,6 +478,8 @@ def mark_notification_read(notification_id):
         return jsonify({'message': 'Notification marked as read'})
     except Exception as e:
         session.rollback()
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -533,6 +539,8 @@ def get_my_shifts():
         return jsonify([shift.to_dict() for shift in shifts])
         
     except Exception as e:
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -580,6 +588,8 @@ def create_swap_request():
         
     except Exception as e:
         session.rollback()
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -610,6 +620,8 @@ def get_incoming_swaps():
         return jsonify(result)
         
     except Exception as e:
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -640,6 +652,8 @@ def get_outgoing_swaps():
         return jsonify(result)
         
     except Exception as e:
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -679,6 +693,8 @@ def accept_swap(swap_id):
         
     except Exception as e:
         session.rollback()
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -716,6 +732,8 @@ def decline_swap(swap_id):
         
     except Exception as e:
         session.rollback()
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -752,6 +770,8 @@ def cancel_swap(swap_id):
         
     except Exception as e:
         session.rollback()
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -818,6 +838,8 @@ def handle_availabilities():
             return jsonify({'message': 'Availability updated successfully'})
         except Exception as e:
             session.rollback()
+            print(f"!!! LOGIN ERROR: {e}")
+            traceback.print_exc() # Эта команда напечатает полный трейсбек
             return jsonify({'error': str(e)}), 500
         finally:
             session.close()
@@ -863,6 +885,8 @@ def handle_shift_notes():
             return jsonify({'message': 'Note added successfully'})
         except Exception as e:
             session.rollback()
+            print(f"!!! LOGIN ERROR: {e}")
+            traceback.print_exc() # Эта команда напечатает полный трейсбек
             return jsonify({'error': str(e)}), 500
         finally:
             session.close()
@@ -914,6 +938,8 @@ def check_in(shift_id):
         return jsonify({'message': 'Check-in successful', 'time': shift.actual_start.isoformat()})
     except Exception as e:
         session.rollback()
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -1014,7 +1040,8 @@ def handle_time_off_requests():
             
             return jsonify({'message': 'Time off request submitted successfully'})
         except Exception as e:
-            session.rollback()
+            session.rollback()print(f"!!! LOGIN ERROR: {e}")
+            traceback.print_exc() # Эта команда напечатает полный трейсбек
             return jsonify({'error': str(e)}), 500
         finally:
             session.close()
@@ -1046,6 +1073,8 @@ def update_profile():
         return jsonify({'message': 'Profile updated successfully'})
     except Exception as e:
         session.rollback()
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -1090,6 +1119,8 @@ def send_emergency_notification():
         })
     except Exception as e:
         session.rollback()
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
@@ -1196,10 +1227,13 @@ if __name__ == '__main__':
         Base.metadata.create_all(engine)
         print("!!! Successfully connected to the database and ensured tables exist.")
     except Exception as e:
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
         print(f"!!! FAILED to connect to the database. Error: {e}")
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
