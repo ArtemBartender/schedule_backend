@@ -1,6 +1,7 @@
 import os
 import io
 import logging
+import traceback
 from datetime import datetime, timedelta, date
 from functools import wraps
 from logging.handlers import RotatingFileHandler
@@ -320,7 +321,9 @@ def login():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
+        return jsonify({"msg": "An error occurred"}), 500
     finally:
         session.close()
 
@@ -1197,6 +1200,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
