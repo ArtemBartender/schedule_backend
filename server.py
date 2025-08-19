@@ -954,28 +954,6 @@ def get_qr_code(shift_id):
     finally:
         session.close()
 
-# Эндпоинт для уведомлений
-@app.route('/api/notifications', methods=['GET'])
-@jwt_required()
-def get_notifications():
-    user_id = get_jwt_identity()
-    session = Session()
-    try:
-        notifications = session.query(Notification).filter_by(
-            user_id=user_id
-        ).order_by(Notification.created_at.desc()).limit(50).all()
-        
-        return jsonify([{
-            'id': n.id,
-            'title': n.title,
-            'message': n.message,
-            'type': n.type,
-            'is_read': n.is_read,
-            'created_at': n.created_at.isoformat()
-        } for n in notifications])
-    finally:
-        session.close()
-
 @app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
 @jwt_required()
 def mark_notification_read(notification_id):
@@ -1238,6 +1216,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
