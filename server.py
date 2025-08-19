@@ -8,7 +8,7 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Boolean, ForeignKey, Text, and_, or_
-from sqlalchemy.orm import sessionmaker, relationship, declarative_base
+from sqlalchemy.orm import sessionmaker, relationship, declarative_base, scoped_session
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, JWTManager, get_jwt
 from flask_cors import CORS
 import pdfplumber
@@ -44,10 +44,14 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=14)
 
 # Настройка базы данных
 engine = create_engine(DATABASE_URL)
-Session = sessionmaker(bind=engine)
+Session = scoped_session(sessionmaker(bind=engine))
 Base = declarative_base()
 jwt = JWTManager(app)
 
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    Session.remove()
+    
 # =========================
 #  МОДЕЛЬ SWAPREQUEST
 # =========================
@@ -1193,6 +1197,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
