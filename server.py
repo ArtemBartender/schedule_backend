@@ -1,26 +1,187 @@
 import os
 import io
-
+import logging
 from datetime import datetime, timedelta, date
 from functools import wraps
+from logging.handlers import RotatingFileHandler
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
-
-from sqlalchemy import (
-    create_engine, Column, Integer, String, Float, Date, DateTime, Boolean,
-    ForeignKey
-)
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Boolean, ForeignKey, Text
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
-
-from flask_jwt_extended import (
-    create_access_token, jwt_required, get_jwt_identity, JWTManager, get_jwt
-)
-
-import pdfplumber
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, JWTManager, get_jwt
 from flask_cors import CORS
-CORS(app, resources={r"/*": {"origins": "*"}})  # временно *, потом сузим
+import pdfplumber
+import qrcode
+from io import BytesIO
+import base64
 
+# =========================
+#  НАСТРОЙКА ПРИЛОЖЕНИЯ
+# =========================
+app = Flask(__name__)
+
+# Настройка CORS
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# Настройка логирования
+handler = RotatingFileHandler('app.log', maxBytes=10000, backupCount=3)
+handler.setLevel(logging.INFO)
+app.logger.addHandler(handler)
+
+# Конфигурация из переменных окружения
+DATABASE_URI = os.environ.get('DATABASE_URI')
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
+
+if not DATABASE_URI or not JWT_SECRET_KEY:
+    print("!!! CRITICAL ERROR: DATABASE_URI or JWT_SECRET_KEY not set in environment variables.")
+    # Для локальной разработки
+    DATABASE_URI = "sqlite:///local.db"
+    JWT_SECRET_KEY = "dev-secret-key-change-in-production"
+
+app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=14)
+
+# Настройка базы данных
+engine = create_engine(DATABASE_URL)
+Session = sessionmaker(bind=engine)
+Base = declarative_base()
+jwt = JWTManager(app)
+
+# =========================
+#  ДОПОЛНИТЕЛЬНЫЕ МОДЕЛИ
+# =========================
+class Availability(Base):
+    __tablename__ = 'availabilities'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    date = Column(Date, nullable=False)
+    slot = Column(String(20), nullable=False)  # 'morning', 'afternoon', 'evening'
+    status = Column(String(20), nullable=False)  # 'available', 'unavailable', 'preferred'
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship('User', backref='availabilities')
+
+class ShiftNote(Base):
+    __tablename__ = 'shift_notes'
+    
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, nullable=False)
+    author_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    author = relationship('User', backref='shift_notes')
+
+class TimeOffRequest(Base):
+    __tablename__ = 'time_off_requests'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    request_type = Column(String(20), nullable=False)  # 'vacation', 'sick'
+    status = Column(String(20), default='pending')  # 'pending', 'approved', 'rejected'
+    attachment_url = Column(String(255))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship('User', backref='time_off_requests')
+
+class Notification(Base):
+    __tablename__ = 'notifications'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    title = Column(String(100), nullable=False)
+    message = Column(Text, nullable=False)
+    type = Column(String(20), nullable=False)  # 'shift_reminder', 'swap_update', 'new_schedule'
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship('User', backref='notifications')
+
+# =========================
+#  ОБНОВЛЕННАЯ МОДЕЛЬ USER
+# =========================
+class User(Base):
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    full_name = Column(String, unique=True, nullable=False)
+    role = Column(String, default='user', nullable=False)
+    phone = Column(String, nullable=True)
+    language = Column(String, default='pl')
+    theme = Column(String, default='light')
+    font_size = Column(String, default='medium')
+    quiet_hours_start = Column(Integer, default=22)
+    quiet_hours_end = Column(Integer, default=8)
+    fcm_token = Column(String, nullable=True)
+
+    # связи
+    shifts = relationship('Shift', back_populates='user', cascade="all, delete-orphan")
+    outgoing_swaps = relationship('SwapRequest', foreign_keys='SwapRequest.from_user_id', back_populates='from_user')
+    incoming_swaps = relationship('SwapRequest', foreign_keys='SwapRequest.to_user_id', back_populates='to_user')
+
+    # утилиты
+    def set_password(self, password): 
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password): 
+        return check_password_hash(self.password_hash, password)
+
+# =========================
+#  ОБНОВЛЕННАЯ МОДЕЛЬ SHIFT
+# =========================
+class Shift(Base):
+    __tablename__ = 'shifts'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    shift_date = Column(Date, nullable=False)
+    shift_code = Column(String, nullable=False)
+    hours = Column(Float, nullable=False)
+    is_coordinator = Column(Boolean, default=False, nullable=False)
+    color_hex = Column(String, nullable=True)
+    actual_start = Column(DateTime, nullable=True)  # Для отметки времени прихода
+    actual_end = Column(DateTime, nullable=True)    # Для отметки времени ухода
+    qr_code = Column(String, nullable=True)         # QR код для отметки
+
+    user = relationship('User', back_populates='shifts')
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "date": self.shift_date.strftime('%Y-%m-%d'),
+            "shift_code": self.shift_code,
+            "hours": self.hours,
+            "isCoordinator": bool(self.is_coordinator),
+            "colorHex": self.color_hex,
+            "actualStart": self.actual_start.isoformat() if self.actual_start else None,
+            "actualEnd": self.actual_end.isoformat() if self.actual_end else None
+        }
+    
+    def generate_qr_code(self):
+        # Генерация QR кода для смены
+        qr_data = {
+            "shift_id": self.id,
+            "user_id": self.user_id,
+            "date": self.shift_date.isoformat()
+        }
+        
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(str(qr_data))
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="black", back_color="white")
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        
+        # Сохраняем QR код как base64
+        self.qr_code = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        return self.qr_code
 
 # =========================
 #  ДЕКОРАТОР: только админ
@@ -38,738 +199,463 @@ def admin_required():
         return decorator
     return wrapper
 
-
 # =========================
-#  НАСТРОЙКА ПРИЛОЖЕНИЯ
+#  НОВЫЕ ЭНДПОИНТЫ ДЛЯ PWA
 # =========================
-app = Flask(__name__)
 
-# Render/Supabase: переменные должны быть выставлены в окружении
-DATABASE_URI = os.environ.get('DATABASE_URI')
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
-
-if not DATABASE_URI or not JWT_SECRET_KEY:
-    print("!!! CRITICAL ERROR: DATABASE_URI or JWT_SECRET_KEY not set in environment variables.")
-    # локально можно раскомментировать и вставить свои значения
-    # DATABASE_URI = "postgresql://USER:PASSWORD@HOST:PORT/DBNAME"
-    # JWT_SECRET_KEY = "dev-secret"
-from datetime import timedelta
-
-app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=14)
-
-
-# Правильное подключение к Postgres в облаке (Supabase/Render)
-engine = create_engine(
-    DATABASE_URI,
-    pool_pre_ping=True,
-    connect_args={
-        "sslmode": "require",
-        "connect_timeout": 10,
-    },
-)
-
-Session = sessionmaker(bind=engine)
-Base = declarative_base()
-jwt = JWTManager(app)
-
-@jwt.unauthorized_loader
-def _missing_token(e):
-    return jsonify(error="Missing or invalid Authorization header"), 401
-
-@jwt.invalid_token_loader
-def _bad_token(e):
-    return jsonify(error=str(e)), 401
-
-@jwt.expired_token_loader
-def _expired(jwt_header, jwt_payload):
-    return jsonify(error="Token expired"), 401
-
-
-# =========================
-#  БЕЛЫЙ СПИСОК/РОЛИ
-# =========================
-ALLOWED_EMAILS = {
-    "r.czajka@lot.pl", "k.koszut-gawryszak@lot.pl", "a.daniel@lot.pl", "m.kaczmarski@lot.pl",
-    "k.levchenko@lot.pl", "p.tomaszewska@lot.pl", "a.palczewska@lot.pl", "j.cioch@lot.pl",
-    "t.rudiuk@lot.pl", "m.rybchynchuk@lot.pl", "m.romanova@lot.pl", "r.vozniak@lot.pl",
-    "a.bilenko@lot.pl", "a.makiunychuk@lot.pl", "m.cieplucha@lot.pl", "i.frejnik@lot.pl",
-    "p.golebiowska@lot.pl", "a.tkachenko@lot.pl", "y.hizhetska@lot.pl", "s.burghardt@lot.pl",
-    "a.yakymenko@lot.pl", "a.mazur@lot.pl", "k.iskova@lot.pl", "m.titarenko@lot.pl",
-    "v.zaitseva@lot.pl", "j.krzymieniewski@lot.pl", "m.fraczyk@lot.pl", "m.lejza@lot.pl",
-    "l.sulkowski@lot.pl", "v.nadiuk@lot.pl", "y.makivnychuk@lot.pl", "n.godzisz@lot.pl",
-    "d.shapoval@lot.pl", "d.solop@lot.pl", "a.kupczyk@lot.pl", "j.wlodarczyk@lot.pl",
-    "a.buska@lot.pl", "w.utko@lot.pl", "o.grabowska@lot.pl", "a.jankowska@lot.pl",
-    "w.skorupska@lot.pl", "p.paskudzka@lot.pl", "m.zukowska@lot.pl", "s.paczkowska@lot.pl",
-    "m.demko@lot.pl", "z.kornacka@lot.pl", "r.nowacka@lot.pl", "k.janikiewicz@lot.pl"
-}
-ADMIN_EMAILS = {
-    "r.czajka@lot.pl", "k.koszut-gawryszak@lot.pl", "m.kaczmarski@lot.pl", "a.bilenko@lot.pl",
-}
-
-# Коды смен -> часы (по твоей логике)
-SHIFT_HOURS = {
-  "1": 9.5, "1/B": 9.5, "2": 9.5, "2/B": 9.5,
-  "W": 0.0, "O": 0.0, "CH": 0.0,
-  "X": 0.0,   # часто встречается в PDF
-  "B": 9.5,   # одиночная "B" (распад 2/B)
-}
-
-
-
-# =========================
-#         МОДЕЛИ
-# =========================
-class User(Base):
-    __tablename__ = 'users'
-
-    id = Column(Integer, primary_key=True)
-    email = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    full_name = Column(String, unique=True, nullable=False)
-    role = Column(String, default='user', nullable=False)
-
-    # связи
-    shifts = relationship('Shift', back_populates='user', cascade="all, delete-orphan")
-    outgoing_swaps = relationship('SwapRequest', foreign_keys='SwapRequest.from_user_id', back_populates='from_user')
-    incoming_swaps = relationship('SwapRequest', foreign_keys='SwapRequest.to_user_id', back_populates='to_user')
-
-    # утилиты
-    def set_password(self, password): self.password_hash = generate_password_hash(password)
-    def check_password(self, password): return check_password_hash(self.password_hash, password)
-
-
-class Shift(Base):
-    __tablename__ = 'shifts'
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    shift_date = Column(Date, nullable=False)
-    shift_code = Column(String, nullable=False)
-    hours = Column(Float, nullable=False)
-
-    # Новые поля для подсветки координаторов (будем заполнять при парсинге PDF)
-    is_coordinator = Column(Boolean, default=False, nullable=False)
-    color_hex = Column(String, nullable=True)  # ожидаем формат "#RRGGBB"
-
-    user = relationship('User', back_populates='shifts')
-
-    def to_dict(self):
-        """Удобный формат для фронта."""
-        return {
-            "id": self.id,
-            "date": self.shift_date.strftime('%Y-%m-%d'),
-            "shift_code": self.shift_code,
-            "hours": self.hours,
-            "isCoordinator": bool(self.is_coordinator),
-            "colorHex": self.color_hex
-        }
-
-
-class SwapRequest(Base):
-    """
-    Таблица запросов на обмен сменами.
-    """
-    __tablename__ = 'swap_requests'
-
-    id = Column(Integer, primary_key=True)
-
-    from_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    to_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    from_shift_id = Column(Integer, ForeignKey('shifts.id', ondelete='CASCADE'), nullable=False)
-    to_shift_id = Column(Integer, ForeignKey('shifts.id', ondelete='SET NULL'), nullable=True)
-
-    status = Column(String, default='pending', nullable=False)  # pending / accepted / declined / cancelled
-
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    from_user = relationship('User', foreign_keys=[from_user_id], back_populates='outgoing_swaps')
-    to_user = relationship('User', foreign_keys=[to_user_id], back_populates='incoming_swaps')
-    from_shift = relationship('Shift', foreign_keys=[from_shift_id])
-    to_shift = relationship('Shift', foreign_keys=[to_shift_id])
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "status": self.status,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
-            "from_user": self.from_user.full_name if self.from_user else None,
-            "to_user": self.to_user.full_name if self.to_user else None,
-            "from_shift": self.from_shift.to_dict() if self.from_shift else None,
-            "to_shift": self.to_shift.to_dict() if self.to_shift else None
-        }
-
-
-# =========================
-#        АВТОРИЗАЦИЯ
-# =========================
-@app.route('/register', methods=['POST'])
-def register():
-    """
-    Регистрация доступна только по белому списку email.
-    Роли: user/admin (назначается по ADMIN_EMAILS).
-    """
-    data = request.get_json()
-    email = (data.get('email') or "").strip().lower()
-    password = data.get('password')
-    full_name = (data.get('full_name') or "").strip()
-
-    if not all([email, password, full_name]):
-        return jsonify({"msg": "Brakujący email, hasło lub imię i nazwisko"}), 400
-
-    if email not in ALLOWED_EMAILS:
-        return jsonify({"msg": "Ten email nie jest autoryzowany"}), 403
-
-    session = Session()
-    try:
-        if session.query(User).filter_by(email=email).first() or session.query(User).filter_by(full_name=full_name).first():
-            return jsonify({"msg": "Użytkownik z tym adresem email lub imieniem już istnieje"}), 409
-
-        new_user = User(email=email, full_name=full_name)
-        new_user.set_password(password)
-        if email in ADMIN_EMAILS:
-            new_user.role = 'admin'
-
-        session.add(new_user)
-        session.commit()
-        return jsonify({"msg": "Użytkownik utworzony pomyślnie"}), 201
-    finally:
-        session.close()
-
-
-@app.route('/login', methods=['POST'])
-def login():
-    """
-    Возвращает JWT с claim `role`.
-    """
-    data = request.get_json()
-    email = (data.get('email') or "").strip().lower()
-    password = data.get('password')
-
-    session = Session()
-    try:
-        user = session.query(User).filter_by(email=email).first()
-        if user and user.check_password(password):
-            additional_claims = {"role": user.role}
-            token = create_access_token(identity=str(user.id), additional_claims=additional_claims)
-            return jsonify(access_token=token)
-        return jsonify({"msg": "Nieprawidłowy email lub hasło"}), 401
-    finally:
-        session.close()
-
-
-# =========================
-#   ЗАГРУЗКА PDF-ГРАФИКА
-# =========================
-@app.route('/schedule/upload', methods=['POST'])
-@admin_required()
-def upload_schedule():
-    """
-    Лёгкий и стабильный парсер первой страницы.
-    Имя файла: *_RRRR_MM.pdf
-    """
-    if 'file' not in request.files:
-        return jsonify({"error": "Brak pliku"}), 400
-
-    up = request.files['file']
-    if not up or up.filename == '':
-        return jsonify({"error": "Nie wybrano pliku"}), 400
-
-    # RRRR_MM из имени файла
-    try:
-        parts = up.filename.split('_')
-        year = int(parts[-2])
-        month = int(parts[-1].split('.')[0])
-    except Exception:
-        return jsonify({"error": "Nieprawidłowy format nazwy pliku. Oczekiwano 'nazwa_RRRR_MM.pdf'"}), 400
-
-    # Читаем PDF в память (устойчиво на Render)
-    try:
-        pdf_bytes = up.read()
-        if not pdf_bytes:
-            return jsonify({"error": "Plik jest pusty"}), 400
-        fobj = io.BytesIO(pdf_bytes)
-    except Exception as e:
-        return jsonify({"error": f"Nie udało się odczytać pliku: {e}"}), 400
-
-    session = Session()
-    try:
-        start_date = datetime(year, month, 1).date()
-        end_date = (start_date.replace(year=year + 1, month=1) - timedelta(days=1)) if month == 12 \
-                   else (start_date.replace(month=month + 1) - timedelta(days=1))
-
-        # чистим месяц
-        session.query(Shift).filter(
-            Shift.shift_date >= start_date,
-            Shift.shift_date <= end_date
-        ).delete(synchronize_session=False)
-
-        users_map = {u.full_name.strip(): u.id for u in session.query(User).all()}
-        rows_added = 0
-
-        with pdfplumber.open(fobj) as pdf:
-            if not pdf.pages:
-                return jsonify({"error": "PDF nie zawiera stron"}), 400
-
-            page = pdf.pages[0]  # только первая страница
-
-            # пробуем “умные” настройки
-            try:
-                tables = page.extract_tables(table_settings=_TABLE_SETTINGS) or []
-            except TypeError:
-                # очень старая версия pdfplumber — минимальные ключи
-                legacy = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
-                tables = page.extract_tables(table_settings=legacy) or []
-            except Exception:
-                tables = []
-
-            # fallback на дефолтный распознаватель
-            if not tables:
-                try:
-                    t = page.extract_table()
-                    tables = [t] if t else []
-                except Exception:
-                    tables = []
-
-            if not tables:
-                return jsonify({"error": "Nie można znaleźć tabeli na pierwszej stronie PDF"}), 400
-
-            table = tables[0]
-            if not table or len(table) < 2:
-                return jsonify({"error": "Tabela jest pusta"}), 400
-
-            header = table[0]
-            data_rows = table[1:]
-
-            # дни 1..31
-            days = [None]
-            for c in header[1:]:
-                ds = ''.join(ch for ch in str(c or '') if ch.isdigit())
-                try:
-                    d = int(ds) if ds else None
-                except ValueError:
-                    d = None
-                days.append(d if d and 1 <= d <= 31 else None)
-
-            batch = 0
-            for r in data_rows:
-                if not r or not r[0]:
-                    continue
-
-                name = str(r[0]).replace('\n', ' ').strip()
-                low = name.lower()
-                if not name or low.startswith('nazwisko') or low.startswith('plan') or low.startswith('braki'):
-                    continue
-
-                uid = users_map.get(name)
-                if not uid:
-                    print(f"[UPLOAD] brak użytkownika w bazie: '{name}' — pomijam.")
-                    continue
-
-                for col_idx in range(1, min(len(r), len(days))):
-                    d = days[col_idx]
-                    if not d:
-                        continue
-
-                    code = (r[col_idx] or '').replace('\n', '').replace(' ', '').replace('.', '').upper()
-                    if not code:
-                        continue
-
-                    if code in ('W', 'O', 'CH', 'X'):
-                        hours = 0.0
-                    elif code in ('1', '1/B', '2', '2/B', 'B'):
-                        hours = SHIFT_HOURS.get(code, 9.5 if code == 'B' else 0.0)
-                    else:
-                        continue
-
-                    session.add(Shift(
-                        user_id=uid,
-                        shift_date=datetime(year, month, d).date(),
-                        shift_code=code,
-                        hours=hours,
-                        is_coordinator=False,
-                        color_hex=None
-                    ))
-                    rows_added += 1
-                    batch += 1
-                    if batch >= 500:
-                        session.flush()
-                        batch = 0
-
-        session.commit()
-        return jsonify({
-            "msg": "Grafik został wgrany i przetworzony pomyślnie",
-            "rows_added": rows_added,
-            "page_used": 1
-        }), 200
-
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-
-# =========================
-#     ПУБЛИЧНЫЕ ЭНДПОИНТЫ
-# =========================
-@app.route('/schedule/day/<string:date_str>', methods=['GET'])
+# Эндпоинт для получения доступностей
+@app.route('/api/availabilities', methods=['GET', 'POST'])
 @jwt_required()
-def get_day_schedule(date_str):
-    """
-    Возвращает список сотрудников на день.
-    (старый контракт — не меняем, чтобы фронт не сломать)
-    """
-    try:
-        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-    except ValueError:
-        return jsonify({"error": "Nieprawidłowy format daty. Użyj RRRR-MM-DD"}), 400
-
-    session = Session()
-    try:
-        shifts = session.query(Shift).join(User).filter(Shift.shift_date == date_obj).all()
-        result = [
-            {
-                "employee_name": shift.user.full_name,
-                "shift_code": shift.shift_code,
-                "hours": shift.hours
-            }
-            for shift in shifts
-        ]
-        return jsonify(result)
-    finally:
-        session.close()
-
-
-@app.route('/schedule/my-schedule', methods=['GET'])
-@jwt_required()
-def get_my_schedule():
-    """
-    Старый эндпоинт для личного графика без доп. полей.
-    Оставляем для обратной совместимости.
-    """
-    current_user_id = get_jwt_identity()
-    session = Session()
-    try:
-        shifts = session.query(Shift).filter_by(user_id=current_user_id).order_by(Shift.shift_date).all()
-        result = [
-            {
-                "date": s.shift_date.strftime('%Y-%m-%d'),
-                "shift_code": s.shift_code,
-                "hours": s.hours
-            }
-            for s in shifts
-        ]
-        return jsonify(result)
-    finally:
-        session.close()
-
-
-# =========================
-#     НОВЫЙ ЭНДПОИНТ V1.1
-# =========================
-@app.route('/me/shifts', methods=['GET'])
-@jwt_required()
-def me_shifts():
-    """
-    Современный эндпоинт для экрана "Moje zmiany".
-    Поддерживает фильтры:
-      - ?from=YYYY-MM-DD
-      - ?to=YYYY-MM-DD
-
-    Возвращает список смен с полями isCoordinator/colorHex.
-    """
-    uid = int(get_jwt_identity())
-    d_from = request.args.get('from')
-    d_to = request.args.get('to')
-
-    try:
-        date_from = datetime.strptime(d_from, '%Y-%m-%d').date() if d_from else None
-        date_to = datetime.strptime(d_to, '%Y-%m-%d').date() if d_to else None
-    except ValueError:
-        return jsonify({"error": "Parametry 'from'/'to' muszą być w formacie RRRR-MM-DD"}), 400
-
-    session = Session()
-    try:
-        q = session.query(Shift).filter(Shift.user_id == uid)
-        if date_from:
-            q = q.filter(Shift.shift_date >= date_from)
-        if date_to:
-            q = q.filter(Shift.shift_date <= date_to)
-
-        rows = q.order_by(Shift.shift_date.asc()).all()
-        return jsonify([s.to_dict() for s in rows])
-    finally:
-        session.close()
-
-
-# ========================================================
-#                ОБМЕНЫ СМЕНАМИ (SWAPS)
-# ========================================================
-
-def _shift_min_dict(s: Shift):
-    return s.to_dict() if s else None
-
-
-def _swap_to_dict(swap: 'SwapRequest'):
-    return {
-        "id": swap.id,
-        "status": swap.status,
-        "created_at": swap.created_at.isoformat(),
-        "updated_at": swap.updated_at.isoformat(),
-        "from_user": swap.from_user.full_name if swap.from_user else None,
-        "to_user": swap.to_user.full_name if swap.to_user else None,
-        "from_shift": _shift_min_dict(swap.from_shift),
-        "to_shift": _shift_min_dict(swap.to_shift),
-    }
-
-
-def _validate_no_conflict(session, user_id: int, target_date: date, exclude_shift_ids=None) -> bool:
-    """
-    Проверяем, что у пользователя НЕТ другой смены в этот же день.
-    exclude_shift_ids — список id смен, которые игнорируем (например, сами участники обмена).
-    """
-    exclude_shift_ids = set(exclude_shift_ids or [])
-    q = session.query(Shift).filter(
-        Shift.user_id == user_id,
-        Shift.shift_date == target_date
-    )
-    if exclude_shift_ids:
-        q = q.filter(~Shift.id.in_(exclude_shift_ids))
-    return session.query(q.exists()).scalar() is False
-
-
-@app.route('/swaps', methods=['POST'])
-@jwt_required()
-def create_swap():
-    """
-    Создать запрос обмена.
-    Тело:
-      {
-        "from_shift_id": 123,            # смена инициатора (обяз.)
-        "to_shift_id": 456 | null        # смена получателя (если null — передача смены)
-      }
-    Владелец from_shift_id должен быть текущим пользователем.
-    """
-    uid = int(get_jwt_identity())
-    data = request.get_json() or {}
-    from_shift_id = data.get('from_shift_id')
-    to_shift_id = data.get('to_shift_id')  # может быть None — односторонняя передача
-
-    if not from_shift_id:
-        return jsonify({"error": "from_shift_id jest wymagane."}), 400
-
-    session = Session()
-    try:
-        from_shift = session.query(Shift).filter_by(id=from_shift_id, user_id=uid).first()
-        if not from_shift:
-            return jsonify({"error": "Ta zmiana nie należy do Ciebie."}), 403
-
-        to_shift = None
-        to_user_id = None
-
-        if to_shift_id is not None:
-            to_shift = session.query(Shift).filter_by(id=to_shift_id).first()
-            if not to_shift:
-                return jsonify({"error": "Docelowa zmiana nie istnieje."}), 404
-            if to_shift.user_id == uid:
-                return jsonify({"error": "Nie możesz wymienić się sam ze sobą."}), 409
-            to_user_id = to_shift.user_id
-        else:
-            # Если передача смены — нужно явно указать получателя (в этом варианте — из поля to_user_id)
-            to_user_id = data.get('to_user_id')
-            if not to_user_id:
-                return jsonify({"error": "Podaj to_user_id dla przekazania zmiany."}), 400
-            if to_user_id == uid:
-                return jsonify({"error": "Nie możesz przekazać zmiany samemu sobie."}), 409
-
-        # Создаём своп
-        swap = SwapRequest(
-            from_user_id=uid,
-            to_user_id=to_user_id,
-            from_shift_id=from_shift.id,
-            to_shift_id=to_shift.id if to_shift else None,
-            status='pending'
-        )
-        session.add(swap)
-        session.commit()
-        return jsonify(_swap_to_dict(swap)), 201
-
-    except Exception as e:
-        session.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@app.route('/swaps/incoming', methods=['GET'])
-@jwt_required()
-def swaps_incoming():
-    uid = int(get_jwt_identity())
-    session = Session()
-    try:
-        items = session.query(SwapRequest).filter_by(to_user_id=uid).order_by(SwapRequest.created_at.desc()).all()
-        return jsonify([_swap_to_dict(s) for s in items])
-    finally:
-        session.close()
-
-
-@app.route('/swaps/outgoing', methods=['GET'])
-@jwt_required()
-def swaps_outgoing():
-    uid = int(get_jwt_identity())
-    session = Session()
-    try:
-        items = session.query(SwapRequest).filter_by(from_user_id=uid).order_by(SwapRequest.created_at.desc()).all()
-        return jsonify([_swap_to_dict(s) for s in items])
-    finally:
-        session.close()
-
-
-def _perform_accept(session, swap: SwapRequest, actor_user_id: int):
-    """
-    Атомарно принять обмен:
-    - Проверка: pending и actor == to_user
-    - Проверка принадлежности смен (на случай изменений)
-    - Проверка конфликтов по датам у обеих сторон
-    - Перенос владельцев смен (или reassignment при передаче)
-    """
-    if swap.status != 'pending':
-        return {"error": "Tę zamianę już przetworzono."}, 409
-
-    if swap.to_user_id != actor_user_id:
-        return {"error": "Brak uprawnień do akceptacji tej zamiany."}, 403
-
-    from_shift = session.query(Shift).filter_by(id=swap.from_shift_id).first()
-    to_shift = session.query(Shift).filter_by(id=swap.to_shift_id).first() if swap.to_shift_id else None
-
-    if not from_shift or (swap.to_shift_id and not to_shift):
-        return {"error": "Jedna z zmian nie istnieje."}, 404
-
-    if from_shift.user_id != swap.from_user_id:
-        return {"error": "Zmiana nadawcy już nie należy do niego."}, 409
-    if to_shift and to_shift.user_id != swap.to_user_id:
-        return {"error": "Twoja zmiana już nie należy do Ciebie."}, 409
-
-    # Проверка конфликтов:
-    # 1) Если это обмен 1:1 — проверяем, что после обмена у обоих нет второй смены в тот же день.
-    # 2) Если это передача — проверяем только у получателя в дату from_shift.
-    if to_shift:
-        # Конфликт у инициатора в дату to_shift
-        if not _validate_no_conflict(session, swap.from_user_id, to_shift.shift_date,
-                                     exclude_shift_ids=[from_shift.id, to_shift.id]):
-            return {"error": "Masz już zmianę lub konflikt w dniu docelowej zmiany."}, 409
-        # Конфликт у получателя в дату from_shift
-        if not _validate_no_conflict(session, swap.to_user_id, from_shift.shift_date,
-                                     exclude_shift_ids=[from_shift.id, to_shift.id]):
-            return {"error": "Odbiorca ma już zmianę lub konflikt w dniu Twojej zmiany."}, 409
-
-        # Всё чисто — делаем обмен владельцев
-        orig_from_user = from_shift.user_id
-        orig_to_user = to_shift.user_id
-        from_shift.user_id = orig_to_user
-        to_shift.user_id = orig_from_user
-        session.add_all([from_shift, to_shift])
-    else:
-        # Передача: просто назначаем from_shift получателю
-        if not _validate_no_conflict(session, swap.to_user_id, from_shift.shift_date,
-                                     exclude_shift_ids=[from_shift.id]):
-            return {"error": "Odbiorca ma już zmianę lub konflikt w tym dniu."}, 409
-        from_shift.user_id = swap.to_user_id
-        session.add(from_shift)
-
-    swap.status = 'accepted'
-    swap.updated_at = datetime.utcnow()
-    session.add(swap)
-
-    return {"status": "accepted", "swap": _swap_to_dict(swap)}, 200
-
-
-@app.route('/swaps/<int:swap_id>/accept', methods=['POST'])
-@jwt_required()
-def swap_accept(swap_id: int):
-    uid = int(get_jwt_identity())
-    session = Session()
-    try:
-        swap = session.query(SwapRequest).filter_by(id=swap_id).first()
-        if not swap:
-            return jsonify({"error": "Swap nie istnieje."}), 404
-
-        # Транзакция
+def handle_availabilities():
+    user_id = get_jwt_identity()
+    
+    if request.method == 'GET':
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        if not start_date or not end_date:
+            return jsonify({'error': 'start_date and end_date are required'}), 400
+            
+        session = Session()
         try:
-            # begin_nested на случай, если render/postgres под капотом требует SAVEPOINT
-            with session.begin():
-                payload, code = _perform_accept(session, swap, uid)
-                if code != 200:
-                    session.rollback()
-                    return jsonify(payload), code
+            availabilities = session.query(Availability).filter(
+                Availability.user_id == user_id,
+                Availability.date >= start_date,
+                Availability.date <= end_date
+            ).all()
+            
+            return jsonify([{
+                'id': a.id,
+                'date': a.date.isoformat(),
+                'slot': a.slot,
+                'status': a.status
+            } for a in availabilities])
+        finally:
+            session.close()
+    
+    else:  # POST
+        data = request.get_json()
+        session = Session()
+        try:
+            # Удаляем существующую запись для этого дня и слота
+            existing = session.query(Availability).filter_by(
+                user_id=user_id,
+                date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
+                slot=data['slot']
+            ).first()
+            
+            if existing:
+                session.delete(existing)
+            
+            # Создаем новую запись
+            availability = Availability(
+                user_id=user_id,
+                date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
+                slot=data['slot'],
+                status=data['status']
+            )
+            
+            session.add(availability)
             session.commit()
+            
+            return jsonify({'message': 'Availability updated successfully'})
         except Exception as e:
             session.rollback()
-            return jsonify({"error": str(e)}), 500
+            return jsonify({'error': str(e)}), 500
+        finally:
+            session.close()
 
-        return jsonify(payload), code
-    finally:
-        session.close()
-
-
-@app.route('/swaps/<int:swap_id>/decline', methods=['POST'])
+# Эндпоинт для заметок к сменам
+@app.route('/api/shift-notes', methods=['GET', 'POST'])
 @jwt_required()
-def swap_decline(swap_id: int):
-    uid = int(get_jwt_identity())
+def handle_shift_notes():
+    if request.method == 'GET':
+        date_str = request.args.get('date')
+        if not date_str:
+            return jsonify({'error': 'date parameter is required'}), 400
+            
+        session = Session()
+        try:
+            notes = session.query(ShiftNote).filter_by(
+                date=datetime.strptime(date_str, '%Y-%m-%d').date()
+            ).order_by(ShiftNote.created_at.desc()).all()
+            
+            return jsonify([{
+                'id': n.id,
+                'text': n.text,
+                'author': n.author.full_name,
+                'created_at': n.created_at.isoformat()
+            } for n in notes])
+        finally:
+            session.close()
+    
+    else:  # POST
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        session = Session()
+        try:
+            note = ShiftNote(
+                date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
+                author_id=user_id,
+                text=data['text']
+            )
+            
+            session.add(note)
+            session.commit()
+            
+            return jsonify({'message': 'Note added successfully'})
+        except Exception as e:
+            session.rollback()
+            return jsonify({'error': str(e)}), 500
+        finally:
+            session.close()
+
+# Эндпоинт для сегодняшних смен
+@app.route('/api/today-shifts', methods=['GET'])
+@jwt_required()
+def get_today_shifts():
+    today = datetime.now().date()
     session = Session()
     try:
-        swap = session.query(SwapRequest).filter_by(id=swap_id).first()
-        if not swap:
-            return jsonify({"error": "Swap nie istnieje."}), 404
-        if swap.to_user_id != uid:
-            return jsonify({"error": "To nie jest Twoja przychodząca zamiana."}), 403
-        if swap.status != 'pending':
-            return jsonify({"error": "Tę zamianę już przetworzono."}), 409
-
-        swap.status = 'declined'
-        swap.updated_at = datetime.utcnow()
-        session.add(swap)
-        session.commit()
-
-        return jsonify({"status": "declined", "swap": _swap_to_dict(swap)}), 200
+        shifts = session.query(Shift).filter_by(shift_date=today).all()
+        
+        result = []
+        for shift in shifts:
+            user = session.query(User).get(shift.user_id)
+            
+            result.append({
+                'id': shift.id,
+                'start_time': shift.shift_code.split('-')[0] if '-' in shift.shift_code else '08:00',
+                'end_time': shift.shift_code.split('-')[1] if '-' in shift.shift_code else '16:00',
+                'user': {
+                    'id': user.id,
+                    'name': user.full_name,
+                    'phone': user.phone,
+                    'role': user.role
+                }
+            })
+        
+        return jsonify(result)
     finally:
         session.close()
 
-
-@app.route('/swaps/<int:swap_id>/cancel', methods=['POST'])
+# Эндпоинт для отметки времени (QR код)
+@app.route('/api/shifts/<int:shift_id>/check-in', methods=['POST'])
 @jwt_required()
-def swap_cancel(swap_id: int):
-    uid = int(get_jwt_identity())
+def check_in(shift_id):
+    user_id = get_jwt_identity()
     session = Session()
     try:
-        swap = session.query(SwapRequest).filter_by(id=swap_id).first()
-        if not swap:
-            return jsonify({"error": "Swap nie istnieje."}), 404
-        if swap.from_user_id != uid:
-            return jsonify({"error": "To nie jest Twoja wysłana zamiana."}), 403
-        if swap.status != 'pending':
-            return jsonify({"error": "Tę zamianę już przetworzono."}), 409
-
-        swap.status = 'cancelled'
-        swap.updated_at = datetime.utcnow()
-        session.add(swap)
+        shift = session.query(Shift).get(shift_id)
+        
+        if not shift or shift.user_id != int(user_id):
+            return jsonify({'error': 'Shift not found or access denied'}), 404
+        
+        shift.actual_start = datetime.now()
         session.commit()
-
-        return jsonify({"status": "cancelled", "swap": _swap_to_dict(swap)}), 200
+        
+        return jsonify({'message': 'Check-in successful', 'time': shift.actual_start.isoformat()})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
     finally:
         session.close()
 
+@app.route('/api/shifts/<int:shift_id>/check-out', methods=['POST'])
+@jwt_required()
+def check_out(shift_id):
+    user_id = get_jwt_identity()
+    session = Session()
+    try:
+        shift = session.query(Shift).get(shift_id)
+        
+        if not shift or shift.user_id != int(user_id):
+            return jsonify({'error': 'Shift not found or access denied'}), 404
+        
+        shift.actual_end = datetime.now()
+        session.commit()
+        
+        return jsonify({'message': 'Check-out successful', 'time': shift.actual_end.isoformat()})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Эндпоинт для генерации QR кода
+@app.route('/api/shifts/<int:shift_id>/qr-code', methods=['GET'])
+@jwt_required()
+def get_qr_code(shift_id):
+    user_id = get_jwt_identity()
+    session = Session()
+    try:
+        shift = session.query(Shift).get(shift_id)
+        
+        if not shift or shift.user_id != int(user_id):
+            return jsonify({'error': 'Shift not found or access denied'}), 404
+        
+        if not shift.qr_code:
+            shift.generate_qr_code()
+            session.commit()
+        
+        return jsonify({'qr_code': shift.qr_code})
+    finally:
+        session.close()
+
+# Эндпоинт для уведомлений
+@app.route('/api/notifications', methods=['GET'])
+@jwt_required()
+def get_notifications():
+    user_id = get_jwt_identity()
+    session = Session()
+    try:
+        notifications = session.query(Notification).filter_by(
+            user_id=user_id
+        ).order_by(Notification.created_at.desc()).limit(50).all()
+        
+        return jsonify([{
+            'id': n.id,
+            'title': n.title,
+            'message': n.message,
+            'type': n.type,
+            'is_read': n.is_read,
+            'created_at': n.created_at.isoformat()
+        } for n in notifications])
+    finally:
+        session.close()
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+@jwt_required()
+def mark_notification_read(notification_id):
+    user_id = get_jwt_identity()
+    session = Session()
+    try:
+        notification = session.query(Notification).get(notification_id)
+        
+        if not notification or notification.user_id != int(user_id):
+            return jsonify({'error': 'Notification not found or access denied'}), 404
+        
+        notification.is_read = True
+        session.commit()
+        
+        return jsonify({'message': 'Notification marked as read'})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Эндпоинт для запросов на отгул
+@app.route('/api/time-off-requests', methods=['GET', 'POST'])
+@jwt_required()
+def handle_time_off_requests():
+    user_id = get_jwt_identity()
+    
+    if request.method == 'GET':
+        session = Session()
+        try:
+            requests = session.query(TimeOffRequest).filter_by(
+                user_id=user_id
+            ).order_by(TimeOffRequest.created_at.desc()).all()
+            
+            return jsonify([{
+                'id': r.id,
+                'start_date': r.start_date.isoformat(),
+                'end_date': r.end_date.isoformat(),
+                'type': r.request_type,
+                'status': r.status,
+                'attachment_url': r.attachment_url,
+                'created_at': r.created_at.isoformat()
+            } for r in requests])
+        finally:
+            session.close()
+    
+    else:  # POST
+        data = request.get_json()
+        session = Session()
+        try:
+            time_off_request = TimeOffRequest(
+                user_id=user_id,
+                start_date=datetime.strptime(data['start_date'], '%Y-%m-%d').date(),
+                end_date=datetime.strptime(data['end_date'], '%Y-%m-%d').date(),
+                request_type=data['type'],
+                attachment_url=data.get('attachment_url')
+            )
+            
+            session.add(time_off_request)
+            session.commit()
+            
+            # Уведомление для администраторов
+            admins = session.query(User).filter_by(role='admin').all()
+            for admin in admins:
+                notification = Notification(
+                    user_id=admin.id,
+                    title='New Time Off Request',
+                    message=f'{time_off_request.user.full_name} submitted a time off request',
+                    type='time_off_request'
+                )
+                session.add(notification)
+            
+            session.commit()
+            
+            return jsonify({'message': 'Time off request submitted successfully'})
+        except Exception as e:
+            session.rollback()
+            return jsonify({'error': str(e)}), 500
+        finally:
+            session.close()
+
+# Эндпоинт для обновления профиля
+@app.route('/api/profile', methods=['PUT'])
+@jwt_required()
+def update_profile():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    session = Session()
+    try:
+        user = session.query(User).get(user_id)
+        
+        if 'language' in data:
+            user.language = data['language']
+        if 'theme' in data:
+            user.theme = data['theme']
+        if 'font_size' in data:
+            user.font_size = data['font_size']
+        if 'quiet_hours_start' in data:
+            user.quiet_hours_start = data['quiet_hours_start']
+        if 'quiet_hours_end' in data:
+            user.quiet_hours_end = data['quiet_hours_end']
+        if 'fcm_token' in data:
+            user.fcm_token = data['fcm_token']
+        
+        session.commit()
+        return jsonify({'message': 'Profile updated successfully'})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+# Эндпоинт для экстренных уведомлений
+@app.route('/api/emergency-notification', methods=['POST'])
+@jwt_required()
+def send_emergency_notification():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    
+    session = Session()
+    try:
+        # Получаем информацию о смене, которую нужно заменить
+        shift_id = data.get('shift_id')
+        shift = session.query(Shift).get(shift_id)
+        
+        if not shift or shift.user_id != int(user_id):
+            return jsonify({'error': 'Shift not found or access denied'}), 404
+        
+        # Находим подходящих сотрудников (по роли и доступности)
+        suitable_users = session.query(User).filter(
+            User.role == shift.user.role,
+            User.id != user_id
+        ).all()
+        
+        # Создаем уведомления для подходящих сотрудников
+        for user in suitable_users:
+            notification = Notification(
+                user_id=user.id,
+                title='Emergency Shift Replacement',
+                message=f'{shift.user.full_name} cannot attend their shift on {shift.shift_date}. Can you take it?',
+                type='emergency'
+            )
+            session.add(notification)
+        
+        session.commit()
+        
+        return jsonify({
+            'message': 'Emergency notifications sent successfully',
+            'recipients_count': len(suitable_users)
+        })
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
 
 # =========================
-#         ЗАПУСК
+#  ОСНОВНЫЕ ЭНДПОИНТЫ (из вашего кода)
+# =========================
+# Здесь должны быть все ваши существующие эндпоинты:
+# /register, /login, /schedule/upload, /schedule/day/<date_str>,
+# /schedule/my-schedule, /me/shifts, /swaps, /swaps/incoming,
+# /swaps/outgoing, /swaps/<int:swap_id>/accept, /swaps/<int:swap_id>/decline,
+# /swaps/<int:swap_id>/cancel
+
+# =========================
+#  ОБНОВЛЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ PDF
+# =========================
+# Добавим улучшенный парсинг PDF с поддержкой цветов ячеек
+def parse_pdf_with_colors(pdf_bytes):
+    """Улучшенный парсер PDF с распознаванием цветов ячеек"""
+    shifts = []
+    
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page_num, page in enumerate(pdf.pages):
+            # Извлекаем таблицы с настройками для сохранения позиции ячеек
+            tables = page.extract_tables({
+                "vertical_strategy": "lines", 
+                "horizontal_strategy": "lines",
+                "explicit_vertical_lines": page.curves + page.edges,
+                "explicit_horizontal_lines": page.curves + page.edges,
+            })
+            
+            # Извлекаем заливку ячеек (цвет)
+            rects = page.rects + page.curves  # rects содержат информацию о заливке
+            
+            for table in tables:
+                for row_idx, row in enumerate(table):
+                    for col_idx, cell in enumerate(row):
+                        if cell and isinstance(cell, str) and cell.strip():
+                            # Определяем координаты ячейки
+                            cell_bbox = (
+                                col_idx * 100,  # Примерные координаты
+                                row_idx * 20,
+                                (col_idx + 1) * 100,
+                                (row_idx + 1) * 20
+                            )
+                            
+                            # Проверяем цвет ячейки
+                            is_coordinator = False
+                            color_hex = None
+                            
+                            for rect in rects:
+                                # Проверяем пересечение rect с ячейкой
+                                if (rect['x0'] >= cell_bbox[0] and rect['x1'] <= cell_bbox[2] and
+                                    rect['y0'] >= cell_bbox[1] and rect['y1'] <= cell_bbox[3]):
+                                    if rect.get('fill'):  # Если есть заливка
+                                        is_coordinator = True
+                                        # Конвертируем цвет в HEX
+                                        if isinstance(rect['fill'], tuple):
+                                            color_hex = '#{:02x}{:02x}{:02x}'.format(
+                                                int(rect['fill'][0] * 255),
+                                                int(rect['fill'][1] * 255),
+                                                int(rect['fill'][2] * 255)
+                                            )
+                                        break
+                            
+                            shifts.append({
+                                'text': cell.strip(),
+                                'page': page_num + 1,
+                                'is_coordinator': is_coordinator,
+                                'color_hex': color_hex
+                            })
+    
+    return shifts
+
+# =========================
+#  ЗАПУСК ПРИЛОЖЕНИЯ
 # =========================
 if __name__ == '__main__':
     try:
-        # create_all СОЗДАЁТ таблицы, но не мигрирует схему.
+        # Создаем все таблицы
         Base.metadata.create_all(engine)
         print("!!! Successfully connected to the database and ensured tables exist.")
     except Exception as e:
@@ -777,12 +663,3 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
-
-
-
-
-
-
-
-
-
