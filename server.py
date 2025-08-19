@@ -954,27 +954,6 @@ def get_qr_code(shift_id):
     finally:
         session.close()
 
-@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
-@jwt_required()
-def mark_notification_read(notification_id):
-    user_id = get_jwt_identity()
-    session = Session()
-    try:
-        notification = session.query(Notification).get(notification_id)
-        
-        if not notification or notification.user_id != int(user_id):
-            return jsonify({'error': 'Notification not found or access denied'}), 404
-        
-        notification.is_read = True
-        session.commit()
-        
-        return jsonify({'message': 'Notification marked as read'})
-    except Exception as e:
-        session.rollback()
-        return jsonify({'error': str(e)}), 500
-    finally:
-        session.close()
-
 # Эндпоинт для запросов на отгул
 @app.route('/api/time-off-requests', methods=['GET', 'POST'])
 @jwt_required()
@@ -1216,6 +1195,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
