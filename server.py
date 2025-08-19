@@ -1074,6 +1074,15 @@ def parse_pdf_with_colors(pdf_bytes):
                             })
     
     return shifts
+# Обслуживание статических файлов
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_static(path):
+    if path != "" and os.path.exists(os.path.join('static', path)):
+        return send_from_directory('static', path)
+    else:
+        return send_from_directory('static', 'index.html')
+
 
 # =========================
 #  ЗАПУСК ПРИЛОЖЕНИЯ
@@ -1088,4 +1097,5 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
