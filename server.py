@@ -66,8 +66,8 @@ class SwapRequest(Base):
     status = Column(String(20), default='pending')  # pending, accepted, declined
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    from_user = relationship('User', foreign_keys=[from_user_id], backref='outgoing_swaps')
-    to_user = relationship('User', foreign_keys=[to_user_id], backref='incoming_swaps')
+    from_user = db.relationship('User', foreign_keys=[from_user_id], back_populates='outgoing_swaps')
+    to_user = db.relationship('User', foreign_keys=[to_user_id], back_populates='incoming_swaps')
     shift = relationship('Shift')
 
 # =========================
@@ -144,8 +144,8 @@ class User(Base):
 
     # связи
     shifts = relationship('Shift', back_populates='user', cascade="all, delete-orphan")
-    outgoing_swaps = relationship('SwapRequest', foreign_keys='SwapRequest.from_user_id', back_populates='from_user')
-    incoming_swaps = relationship('SwapRequest', foreign_keys='SwapRequest.to_user_id', back_populates='to_user')
+    outgoing_swaps = db.relationship('SwapRequest', foreign_keys='SwapRequest.from_user_id', back_populates='from_user')
+    incoming_swaps = db.relationship('SwapRequest', foreign_keys='SwapRequest.to_user_id', back_populates='to_user')
 
     # утилиты
     def set_password(self, password): 
@@ -283,10 +283,10 @@ def register():
             }
         }), 201
         
-         except Exception as e:
-            print(f"!!! LOGIN ERROR: {e}")
-            traceback.print_exc() # Эта команда напечатает полный трейсбек
-            return jsonify({"msg": "An error occurred"}), 500
+    except Exception as e:
+        print(f"!!! LOGIN ERROR: {e}")
+        traceback.print_exc() # Эта команда напечатает полный трейсбек
+        return jsonify({"msg": "An error occurred"}), 500
 
 
 
@@ -360,7 +360,7 @@ def upload_schedule():
         session.commit()
         return jsonify({'message': 'Schedule uploaded successfully'})
         
-     except Exception as e:
+    except Exception as e:
             print(f"!!! LOGIN ERROR: {e}")
             traceback.print_exc() # Эта команда напечатает полный трейсбек
             return jsonify({"msg": "An error occurred"}), 500
@@ -836,7 +836,8 @@ def handle_availabilities():
             session.commit()
             
             return jsonify({'message': 'Availability updated successfully'})
-        except Exception as e:
+    
+    except Exception as e:
             session.rollback()
             print(f"!!! LOGIN ERROR: {e}")
             traceback.print_exc() # Эта команда напечатает полный трейсбек
@@ -1233,6 +1234,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
