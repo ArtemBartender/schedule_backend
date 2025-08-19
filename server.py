@@ -44,7 +44,7 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=14)
 
 # Настройка базы данных
 engine = create_engine(DATABASE_URL)
-Session = scoped_session(sessionmaker(bind=engine))
+Session = sessionmaker(bind=engine)
 Base = declarative_base()
 jwt = JWTManager(app)
 
@@ -1196,6 +1196,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
