@@ -22,7 +22,7 @@ import base64
 app = Flask(__name__)
 
 # Настройка CORS
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 # Настройка логирования
 handler = RotatingFileHandler('app.log', maxBytes=10000, backupCount=3)
@@ -168,17 +168,22 @@ class Shift(Base):
 
     user = relationship('User', back_populates='shifts')
 
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "date": self.shift_date.strftime('%Y-%m-%d'),
-            "shift_code": self.shift_code,
-            "hours": self.hours,
-            "isCoordinator": bool(self.is_coordinator),
-            "colorHex": self.color_hex,
-            "actualStart": self.actual_start.isoformat() if self.actual_start else None,
-            "actualEnd": self.actual_end.isoformat() if self.actual_end else None
-        }
+def to_dict(self):
+    return {
+        "id": self.id,
+        "user_id": self.user_id,
+        "date": self.shift_date.strftime('%Y-%m-%d'),
+        "shift_code": self.shift_code,
+        "hours": self.hours,
+        "isCoordinator": bool(self.is_coordinator),
+        "colorHex": self.color_hex,
+        "actualStart": self.actual_start.isoformat() if self.actual_start else None,
+        "actualEnd": self.actual_end.isoformat() if self.actual_end else None,
+        "user": {
+            "id": self.user.id,
+            "full_name": self.user.full_name
+        } if self.user else None
+    }
     
     def generate_qr_code(self):
         # Генерация QR кода для смены
@@ -221,7 +226,17 @@ def admin_required():
 # =========================
 
 # Регистрация пользователя
-@app.route('/register', methods=['POST'])
+
+@jwt.unauthorized_loader
+def unauthorized_callback(callback):
+    return jsonify({'error': 'Missing or invalid token'}), 401
+
+@jwt.invalid_token_loader
+def invalid_token_callback(callback):
+    return jsonify({'error': 'Invalid token'}), 401
+
+
+@app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
     session = Session()
@@ -269,6 +284,11 @@ def register():
     finally:
         session.close()
 
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    Session.remove()
+    
 # Аутентификация пользователя
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -303,7 +323,7 @@ def login():
         session.close()
 
 # Загрузка расписания
-@app.route('/schedule/upload', methods=['POST'])
+@app.route('/api/schedule/upload', methods=['POST'])
 @jwt_required()
 @admin_required()
 def upload_schedule():
@@ -343,16 +363,36 @@ def upload_schedule():
         session.close()
 
 # Получение расписания на день
-@app.route('/schedule/day/<date_str>', methods=['GET'])
+@app.route('/api/schedule/day', methods=['GET'])
 @jwt_required()
-def get_day_schedule(date_str):
+def get_schedule_by_date_range():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not start_date or not end_date:
+        return jsonify({'error': 'start_date and end_date parameters are required'}), 400
+    
     try:
-        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+        start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        
         session = Session()
+        shifts = session.query(Shift).filter(
+            Shift.shift_date >= start,
+            Shift.shift_date <= end
+        ).all()
         
-        shifts = session.query(Shift).filter_by(shift_date=date_obj).all()
+        # Добавьте информацию о пользователе для каждой смены
+        result = []
+        for shift in shifts:
+            shift_dict = shift.to_dict()
+            shift_dict['user'] = {
+                'id': shift.user.id,
+                'full_name': shift.user.full_name
+            }
+            result.append(shift_dict)
         
-        return jsonify([shift.to_dict() for shift in shifts])
+        return jsonify(result)
         
     except ValueError:
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
@@ -360,9 +400,8 @@ def get_day_schedule(date_str):
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
-
 # Получение моего расписания
-@app.route('/schedule/my-schedule', methods=['GET'])
+@app.route('/api/schedule/my-schedule', methods=['GET'])
 @jwt_required()
 def get_my_schedule():
     user_id = get_jwt_identity()
@@ -392,8 +431,87 @@ def get_my_schedule():
     finally:
         session.close()
 
+@app.route('/api/notifications', methods=['GET'])
+@jwt_required()
+def get_notifications():
+    user_id = get_jwt_identity()
+    session = Session()
+    try:
+        notifications = session.query(Notification).filter_by(
+            user_id=user_id
+        ).order_by(Notification.created_at.desc()).all()
+        
+        return jsonify([{
+            'id': n.id,
+            'title': n.title,
+            'message': n.message,
+            'type': n.type,
+            'is_read': n.is_read,
+            'created_at': n.created_at.isoformat()
+        } for n in notifications])
+    finally:
+        session.close()
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+@jwt_required()
+def mark_notification_read(notification_id):
+    user_id = get_jwt_identity()
+    session = Session()
+    try:
+        notification = session.query(Notification).get(notification_id)
+        
+        if not notification or notification.user_id != int(user_id):
+            return jsonify({'error': 'Notification not found or access denied'}), 404
+        
+        notification.is_read = True
+        session.commit()
+        
+        return jsonify({'message': 'Notification marked as read'})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/api/me', methods=['GET'])
+@jwt_required()
+def get_current_user():
+    user_id = get_jwt_identity()
+    session = Session()
+    try:
+        user = session.query(User).get(user_id)
+        return jsonify({
+            'id': user.id,
+            'email': user.email,
+            'full_name': user.full_name,
+            'role': user.role,
+            'phone': user.phone,
+            'language': user.language,
+            'theme': user.theme,
+            'font_size': user.font_size
+        })
+    finally:
+        session.close()
+
+@app.route('/api/users', methods=['GET'])
+@jwt_required()
+def get_users():
+    session = Session()
+    try:
+        users = session.query(User).all()
+        return jsonify([{
+            'id': u.id,
+            'email': u.email,
+            'full_name': u.full_name,
+            'role': u.role
+        } for u in users])
+    finally:
+        session.close()
+
+
 # Получение моих смен
-@app.route('/me/shifts', methods=['GET'])
+@app.route('/api/me/shifts', methods=['GET'])
 @jwt_required()
 def get_my_shifts():
     user_id = get_jwt_identity()
@@ -415,7 +533,7 @@ def get_my_shifts():
         session.close()
 
 # Создание запроса на обмен сменой
-@app.route('/swaps', methods=['POST'])
+@app.route('/api/swaps', methods=['POST'])
 @jwt_required()
 def create_swap_request():
     user_id = get_jwt_identity()
@@ -462,7 +580,7 @@ def create_swap_request():
         session.close()
 
 # Получение входящих запросов на обмен
-@app.route('/swaps/incoming', methods=['GET'])
+@app.route('/api/swaps/incoming', methods=['GET'])
 @jwt_required()
 def get_incoming_swaps():
     user_id = get_jwt_identity()
@@ -492,7 +610,7 @@ def get_incoming_swaps():
         session.close()
 
 # Получение исходящих запросов на обмен
-@app.route('/swaps/outgoing', methods=['GET'])
+@app.route('/api/swaps/outgoing', methods=['GET'])
 @jwt_required()
 def get_outgoing_swaps():
     user_id = get_jwt_identity()
@@ -522,7 +640,7 @@ def get_outgoing_swaps():
         session.close()
 
 # Принятие запроса на обмен
-@app.route('/swaps/<int:swap_id>/accept', methods=['POST'])
+@app.route('/api/swaps/<int:swap_id>/accept', methods=['POST'])
 @jwt_required()
 def accept_swap(swap_id):
     user_id = get_jwt_identity()
@@ -561,7 +679,7 @@ def accept_swap(swap_id):
         session.close()
 
 # Отклонение запроса на обмен
-@app.route('/swaps/<int:swap_id>/decline', methods=['POST'])
+@app.route('/api/swaps/<int:swap_id>/decline', methods=['POST'])
 @jwt_required()
 def decline_swap(swap_id):
     user_id = get_jwt_identity()
@@ -598,7 +716,7 @@ def decline_swap(swap_id):
         session.close()
 
 # Отмена запроса на обмен
-@app.route('/swaps/<int:swap_id>/cancel', methods=['POST'])
+@app.route('/api/swaps/<int:swap_id>/cancel', methods=['POST'])
 @jwt_required()
 def cancel_swap(swap_id):
     user_id = get_jwt_identity()
@@ -1120,6 +1238,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
