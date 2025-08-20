@@ -1,6 +1,7 @@
 import os
 import io
 import logging
+import traceback
 from datetime import datetime, timedelta, date
 from functools import wraps
 
@@ -68,10 +69,10 @@ class User(db.Model):
                                     back_populates='from_user', cascade="all, delete-orphan")
     incoming_swaps = db.relationship('SwapRequest', foreign_keys='SwapRequest.to_user_id', 
                                     back_populates='to_user', cascade="all, delete-orphan")
-    availabilities = db.relationship('Availability', backref='user', cascade="all, delete-orphan")
-    shift_notes = db.relationship('ShiftNote', backref='author', cascade="all, delete-orphan")
-    time_off_requests = db.relationship('TimeOffRequest', backref='user', cascade="all, delete-orphan")
-    notifications = db.relationship('Notification', backref='user', cascade="all, delete-orphan")
+    availabilities = db.relationship('Availability', back_populates='user', cascade="all, delete-orphan")
+    shift_notes = db.relationship('ShiftNote', back_populates='author', cascade="all, delete-orphan")
+    time_off_requests = db.relationship('TimeOffRequest', back_populates='user', cascade="all, delete-orphan")
+    notifications = db.relationship('Notification', back_populates='user', cascade="all, delete-orphan")
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -260,16 +261,21 @@ def register():
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
+    session = None  # Инициализируем сессию
+    
     try:
         if not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email and password are required'}), 400
         
-        user = db.session.query(User).filter_by(email=data['email']).first()
+        # Создаем новую сессию
+        session = Session()
+        user = session.query(User).filter_by(email=data['email']).first()
         
         if not user or not user.check_password(data['password']):
             logger.warning(f"Failed login attempt for email: {data['email']}")
             return jsonify({'error': 'Invalid credentials'}), 401
         
+        # Создаем JWT токен
         access_token = create_access_token(
             identity=str(user.id),
             additional_claims={'role': user.role, 'email': user.email}
@@ -290,6 +296,10 @@ def login():
     except Exception as e:
         logger.error(f"Login error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred during login'}), 500
+    finally:
+        if session:
+            session.close()  # Всегда закрываем сессию
+
 
 @app.route('/api/schedule/upload', methods=['POST'])
 @jwt_required()
@@ -1040,7 +1050,10 @@ def parse_pdf_with_colors(pdf_bytes):
                         day_str = h.split(',')[0].strip()
                         try:
                             day = int(day_str)
-                            dates.append(datetime.datetime(2025, 8, day).strftime('%Y-%m-%d'))
+                            # Используем текущий год и месяц
+                            current_year = datetime.now().year
+                            current_month = datetime.now().month
+                            dates.append(datetime(current_year, current_month, day).strftime('%Y-%m-%d'))
                         except ValueError:
                             continue
                 
@@ -1053,11 +1066,11 @@ def parse_pdf_with_colors(pdf_bytes):
                     if name.isdigit() or not name:
                         continue
                     
-                    shift_values = row[1:1 + len(dates)]  # Шизы смен
+                    shift_values = row[1:1 + len(dates)]  # Смены
                     for j, value in enumerate(shift_values):
-                        value = value.strip()
+                        value = value.strip() if value else ''
                         if value and value not in ['x', 'X']:
-                            is_coordinator = 'B' in value
+                            is_coordinator = 'B' in value.upper()
                             hours = 4.0 if is_coordinator else 8.0
                             
                             # Определение цвета ячейки
@@ -1127,5 +1140,6 @@ if __name__ == '__main__':
         db.create_all()
     logger.info("Successfully connected to the database and ensured tables exist")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
 
 
