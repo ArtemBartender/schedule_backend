@@ -449,6 +449,10 @@ def get_my_schedule():
         logger.error(f"Get my schedule error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
 
+from flask import jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from http import HTTPStatus
+
 @app.route('/api/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
@@ -984,6 +988,7 @@ if __name__ == '__main__':
     
     logger.info("База данных проверена и мигрирована")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
 
 
 
