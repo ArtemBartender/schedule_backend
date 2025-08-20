@@ -56,19 +56,19 @@ def shutdown_session(exception=None):
 # =========================
 #  МОДЕЛЬ SWAPREQUEST
 # =========================
-class SwapRequest(Base):
+class SwapRequest(db.Model):
     __tablename__ = 'swap_requests'
     
-    id = Column(Integer, primary_key=True)
-    from_user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    to_user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    shift_id = Column(Integer, ForeignKey('shifts.id'), nullable=False)
-    status = Column(String(20), default='pending')  # pending, accepted, declined
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id = db.Column(db.Integer, primary_key=True)
+    from_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    to_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    shift_id = db.Column(db.Integer, db.ForeignKey('shifts.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')  # pending, accepted, declined
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     from_user = db.relationship('User', foreign_keys=[from_user_id], back_populates='outgoing_swaps')
     to_user = db.relationship('User', foreign_keys=[to_user_id], back_populates='incoming_swaps')
-    shift = relationship('Shift')
+    shift = db.relationship('Shift')
 
 # =========================
 #  ДОПОЛНИТЕЛЬНЫЕ МОДЕЛИ
@@ -1235,6 +1235,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
