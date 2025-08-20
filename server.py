@@ -261,21 +261,17 @@ def register():
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
-    session = None  # Инициализируем сессию
     
     try:
         if not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email and password are required'}), 400
         
-        # Создаем новую сессию
-        session = Session()
-        user = session.query(User).filter_by(email=data['email']).first()
+        user = db.session.query(User).filter_by(email=data['email']).first()
         
         if not user or not user.check_password(data['password']):
             logger.warning(f"Failed login attempt for email: {data['email']}")
             return jsonify({'error': 'Invalid credentials'}), 401
         
-        # Создаем JWT токен
         access_token = create_access_token(
             identity=str(user.id),
             additional_claims={'role': user.role, 'email': user.email}
@@ -296,9 +292,6 @@ def login():
     except Exception as e:
         logger.error(f"Login error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred during login'}), 500
-    finally:
-        if session:
-            session.close()  # Всегда закрываем сессию
 
 
 @app.route('/api/schedule/upload', methods=['POST'])
@@ -1140,6 +1133,7 @@ if __name__ == '__main__':
         db.create_all()
     logger.info("Successfully connected to the database and ensured tables exist")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
 
 
 
