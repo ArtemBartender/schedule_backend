@@ -4,7 +4,7 @@ import logging
 import traceback
 from datetime import datetime, timedelta, date
 from functools import wraps
-
+from http import HTTPStatus
 from flask import Flask, request, jsonify, send_file, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -453,8 +453,14 @@ def get_my_schedule():
 @jwt_required()
 def get_current_user():
     user_id = get_jwt_identity()
+    if user_id is None:
+        return jsonify({'error': 'Invalid or missing token'}), HTTPStatus.UNAUTHORIZED
+
     try:
         user = db.session.query(User).get(user_id)
+        if user is None:
+            return jsonify({'error': 'User not found'}), HTTPStatus.NOT_FOUND
+        
         return jsonify({
             'id': user.id,
             'email': user.email,
@@ -464,7 +470,7 @@ def get_current_user():
     
     except Exception as e:
         logger.error(f"Get current user error: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({'error': 'An error occurred'}), 500
+        return jsonify({'error': 'An error occurred'}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 @app.route('/api/users', methods=['GET'])
 @jwt_required()
@@ -978,6 +984,7 @@ if __name__ == '__main__':
     
     logger.info("База данных проверена и мигрирована")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
 
 
 
