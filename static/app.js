@@ -184,6 +184,7 @@ async function apiCall(endpoint, options = {}) {
     const url = `${API_BASE_URL}/api${endpoint}`;
     
     const authToken = localStorage.getItem('authToken');
+    console.log('API Call - Token:', authToken);
     
     const defaultOptions = {
         headers: {
@@ -751,11 +752,12 @@ async function handleLogin(e) {
         method: 'POST',
         body: { email, password }
     });
-    
+    console.log('Login response:', data);
     if (data && data.access_token) {
         console.log('Login successful, token received:', data.access_token);
         authToken = data.access_token;
         localStorage.setItem('authToken', authToken);
+        console.log('Token saved:', authToken);
         loginModal.classList.remove('show');
         fetchUserProfile();
     } else {
