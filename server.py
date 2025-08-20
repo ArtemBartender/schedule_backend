@@ -57,12 +57,12 @@ class User(db.Model):
     full_name = db.Column(db.String, unique=True, nullable=False)
     role = db.Column(db.String, default='user', nullable=False)
     # phone = db.Column(db.String, nullable=True)
-    language = db.Column(db.String, default='pl')
-    theme = db.Column(db.String, default='light')
-    font_size = db.Column(db.String, default='medium')
-    quiet_hours_start = db.Column(db.Integer, default=22)
-    quiet_hours_end = db.Column(db.Integer, default=8)
-    fcm_token = db.Column(db.String, nullable=True)
+    #language = db.Column(db.String, default='pl')
+    #theme = db.Column(db.String, default='light')
+    #font_size = db.Column(db.String, default='medium')
+    #quiet_hours_start = db.Column(db.Integer, default=22)
+    #quiet_hours_end = db.Column(db.Integer, default=8)
+    #fcm_token = db.Column(db.String, nullable=True)
 
     shifts = db.relationship('Shift', back_populates='user', cascade="all, delete-orphan")
     outgoing_swaps = db.relationship('SwapRequest', foreign_keys='SwapRequest.from_user_id', 
@@ -621,12 +621,12 @@ def get_current_user():
             'full_name': user.full_name,
             'role': user.role,
             # 'phone': user.phone,
-            'language': user.language,
-            'theme': user.theme,
-            'font_size': user.font_size,
-            'quiet_hours_start': user.quiet_hours_start,
-            'quiet_hours_end': user.quiet_hours_end,
-            'fcm_token': user.fcm_token
+            #'language': user.language,
+            #'theme': user.theme,
+            #'font_size': user.font_size,
+            #'quiet_hours_start': user.quiet_hours_start,
+            #'quiet_hours_end': user.quiet_hours_end,
+            #'fcm_token': user.fcm_token
         })
     
     except Exception as e:
@@ -941,20 +941,20 @@ def update_profile():
         # if 'phone' in data:
            # user.phone = data['phone']
         
-        if 'language' in data:
-            user.language = data['language']
-        if 'theme' in data:
-            user.theme = data['theme']
-        if 'font_size' in data:
-            if data['font_size'] not in ['small', 'medium', 'large']:
-                return jsonify({'error': 'Invalid font_size value'}), 400
-            user.font_size = data['font_size']
-        if 'quiet_hours_start' in data:
-            user.quiet_hours_start = int(data['quiet_hours_start'])
-        if 'quiet_hours_end' in data:
-            user.quiet_hours_end = int(data['quiet_hours_end'])
-        if 'fcm_token' in data:
-            user.fcm_token = data['fcm_token']
+        #if 'language' in data:
+            #user.language = data['language']
+        #if 'theme' in data:
+            #user.theme = data['theme']
+        #if 'font_size' in data:
+            #if data['font_size'] not in ['small', 'medium', 'large']:
+                #return jsonify({'error': 'Invalid font_size value'}), 400
+            #user.font_size = data['font_size']
+        #if 'quiet_hours_start' in data:
+            #user.quiet_hours_start = int(data['quiet_hours_start'])
+        #if 'quiet_hours_end' in data:
+            #user.quiet_hours_end = int(data['quiet_hours_end'])
+        #if 'fcm_token' in data:
+            #user.fcm_token = data['fcm_token']
         
         db.session.commit()
         logger.info(f"Profile updated for user {user_id}")
@@ -1133,6 +1133,7 @@ if __name__ == '__main__':
         db.create_all()
     logger.info("Successfully connected to the database and ensured tables exist")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
 
 
 
