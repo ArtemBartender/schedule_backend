@@ -1041,7 +1041,8 @@ def handle_time_off_requests():
             
             return jsonify({'message': 'Time off request submitted successfully'})
         except Exception as e:
-            session.rollback()print(f"!!! LOGIN ERROR: {e}")
+            session.rollback()
+            print(f"!!! LOGIN ERROR: {e}")
             traceback.print_exc() # Эта команда напечатает полный трейсбек
             return jsonify({'error': str(e)}), 500
         finally:
@@ -1234,6 +1235,7 @@ if __name__ == '__main__':
         exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
