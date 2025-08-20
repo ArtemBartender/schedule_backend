@@ -846,7 +846,7 @@
             const settingsModal = document.getElementById('settingsModal');
             const installPrompt = document.getElementById('installPrompt');
             const installBtn = document.getElementById('installBtn');
-        
+            window.API_BASE_URL = 'https://lot-schedule-api.onrender.com';
             // Утилита для дебаунсинга
             function debounce(func, wait) {
                 let timeout;
@@ -992,24 +992,39 @@
                 document.getElementById('saveAvailability').addEventListener('click', debounce(saveAvailability, 300));
             }
         
-            // Функции для работы с API
+                       // Функции для работы с API
             async function apiCall(endpoint, options = {}) {
-                const API_BASE_URL = process.env.API_BASE_URL || window.location.origin;
+                // Используем текущий origin или задаем значение по умолчанию для разработки
+                const API_BASE_URL = window.API_BASE_URL || window.location.origin;
                 const url = `${API_BASE_URL}/api${endpoint}`;
+                
+                // Получаем токен из localStorage
+                const authToken = localStorage.getItem('authToken');
                 
                 const defaultOptions = {
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
                     }
                 };
-        
-                const config = { ...defaultOptions, ...options };
                 
-                if (config.body) {
+                // Добавляем токен авторизации, если он есть
+                if (authToken) {
+                    defaultOptions.headers.Authorization = `Bearer ${authToken}`;
+                }
+                
+                const config = { 
+                    ...defaultOptions, 
+                    ...options,
+                    headers: {
+                        ...defaultOptions.headers,
+                        ...(options.headers || {})
+                    }
+                };
+                
+                if (config.body && typeof config.body === 'object') {
                     config.body = JSON.stringify(config.body);
                 }
-        
+            
                 try {
                     const response = await fetch(url, config);
                     const contentType = response.headers.get('content-type');
