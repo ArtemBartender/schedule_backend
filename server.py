@@ -90,9 +90,9 @@ class Shift(db.Model):
     hours = db.Column(db.Float, nullable=False)
     is_coordinator = db.Column(db.Boolean, default=False, nullable=False)
     color_hex = db.Column(db.String, nullable=True)
-    actual_start = db.Column(db.DateTime, nullable=True)
-    actual_end = db.Column(db.DateTime, nullable=True)
-    qr_code = db.Column(db.String, nullable=True)
+    #actual_start = db.Column(db.DateTime, nullable=True)
+    #actual_end = db.Column(db.DateTime, nullable=True)
+    #qr_code = db.Column(db.String, nullable=True)
 
     user = db.relationship('User', back_populates='shifts')
 
@@ -105,8 +105,8 @@ class Shift(db.Model):
             "hours": self.hours,
             "is_coordinator": bool(self.is_coordinator),
             "color_hex": self.color_hex,
-            "actual_start": self.actual_start.isoformat() if self.actual_start else None,
-            "actual_end": self.actual_end.isoformat() if self.actual_end else None,
+            #"actual_start": self.actual_start.isoformat() if self.actual_start else None,
+            #"actual_end": self.actual_end.isoformat() if self.actual_end else None,
             "user": {
                 "id": self.user.id,
                 "full_name": self.user.full_name
@@ -293,6 +293,11 @@ def login():
         logger.error(f"Login error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred during login'}), 500
 
+@app.route('/static/icons/<path:filename>')
+def serve_icons(filename):
+    return send_from_directory('static/icons', filename)
+
+
 
 @app.route('/api/schedule/upload', methods=['POST'])
 @jwt_required()
@@ -399,215 +404,6 @@ def get_my_schedule():
         logger.error(f"Get my schedule error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
 
-@app.route('/api/swaps', methods=['GET', 'POST'])
-@jwt_required()
-def handle_swaps():
-    user_id = get_jwt_identity()
-    
-    if request.method == 'GET':
-        try:
-            incoming = db.session.query(SwapRequest).filter_by(to_user_id=user_id).all()
-            outgoing = db.session.query(SwapRequest).filter_by(from_user_id=user_id).all()
-            
-            result = []
-            for swap in incoming + outgoing:
-                result.append({
-                    'id': swap.id,
-                    'from_user': {
-                        'id': swap.from_user.id,
-                        'full_name': swap.from_user.full_name
-                    },
-                    'to_user': {
-                        'id': swap.to_user.id,
-                        'full_name': swap.to_user.full_name
-                    },
-                    'shift': swap.shift.to_dict(),
-                    'status': swap.status,
-                    'created_at': swap.created_at.isoformat()
-                })
-            
-            return jsonify(result)
-        
-        except Exception as e:
-            logger.error(f"Get swaps error: {str(e)}\n{traceback.format_exc()}")
-            return jsonify({'error': 'An error occurred'}), 500
-    
-    else:  # POST
-        data = request.get_json()
-        try:
-            if not data.get('shift_id') or not data.get('to_user_id'):
-                return jsonify({'error': 'shift_id and to_user_id are required'}), 400
-            
-            shift = db.session.query(Shift).get(data['shift_id'])
-            if not shift or shift.user_id != int(user_id):
-                return jsonify({'error': 'Shift not found or access denied'}), 404
-            
-            to_user = db.session.query(User).get(data['to_user_id'])
-            if not to_user:
-                return jsonify({'error': 'Target user not found'}), 404
-            
-            swap_request = SwapRequest(
-                from_user_id=user_id,
-                to_user_id=data['to_user_id'],
-                shift_id=data['shift_id']
-            )
-            
-            db.session.add(swap_request)
-            
-            notification = Notification(
-                user_id=data['to_user_id'],
-                title='Nowa prośba o zamianę',
-                message=f'{swap_request.from_user.full_name} chce zamienić się z Tobą zmianą',
-                type='swap_request'
-            )
-            db.session.add(notification)
-            
-            db.session.commit()
-            logger.info(f"Swap request created by user {user_id} for shift {data['shift_id']}")
-            return jsonify({'message': 'Swap request created successfully'})
-        
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Create swap error: {str(e)}\n{traceback.format_exc()}")
-            return jsonify({'error': 'An error occurred'}), 500
-
-@app.route('/api/swaps/<int:swap_id>/accept', methods=['POST'])
-@jwt_required()
-def accept_swap(swap_id):
-    user_id = get_jwt_identity()
-    try:
-        swap = db.session.query(SwapRequest).get(swap_id)
-        
-        if not swap or swap.to_user_id != int(user_id):
-            return jsonify({'error': 'Swap request not found or access denied'}), 404
-        
-        if swap.status != 'pending':
-            return jsonify({'error': 'Swap request already processed'}), 400
-        
-        swap.shift.user_id = user_id
-        swap.status = 'accepted'
-        
-        notification = Notification(
-            user_id=swap.from_user_id,
-            title='Prośba o zamianę zaakceptowana',
-            message=f'{swap.to_user.full_name} zaakceptował Twoją prośbę o zamianę',
-            type='swap_update'
-        )
-        db.session.add(notification)
-        
-        db.session.commit()
-        logger.info(f"Swap request {swap_id} accepted by user {user_id}")
-        return jsonify({'message': 'Swap request accepted successfully'})
-    
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Accept swap error: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({'error': 'An error occurred'}), 500
-
-@app.route('/api/swaps/<int:swap_id>/decline', methods=['POST'])
-@jwt_required()
-def decline_swap(swap_id):
-    user_id = get_jwt_identity()
-    try:
-        swap = db.session.query(SwapRequest).get(swap_id)
-        
-        if not swap or swap.to_user_id != int(user_id):
-            return jsonify({'error': 'Swap request not found or access denied'}), 404
-        
-        if swap.status != 'pending':
-            return jsonify({'error': 'Swap request already processed'}), 400
-        
-        swap.status = 'declined'
-        
-        notification = Notification(
-            user_id=swap.from_user_id,
-            title='Prośba o zamianę odrzucona',
-            message=f'{swap.to_user.full_name} odrzucił Twoją prośbę o zamianę',
-            type='swap_update'
-        )
-        db.session.add(notification)
-        
-        db.session.commit()
-        logger.info(f"Swap request {swap_id} declined by user {user_id}")
-        return jsonify({'message': 'Swap request declined successfully'})
-    
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Decline swap error: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({'error': 'An error occurred'}), 500
-
-@app.route('/api/swaps/<int:swap_id>/cancel', methods=['POST'])
-@jwt_required()
-def cancel_swap(swap_id):
-    user_id = get_jwt_identity()
-    try:
-        swap = db.session.query(SwapRequest).get(swap_id)
-        
-        if not swap or swap.from_user_id != int(user_id):
-            return jsonify({'error': 'Swap request not found or access denied'}), 404
-        
-        if swap.status != 'pending':
-            return jsonify({'error': 'Cannot cancel processed swap request'}), 400
-        
-        notification = Notification(
-            user_id=swap.to_user_id,
-            title='Prośba o zamianę anulowana',
-            message=f'{swap.from_user.full_name} anulował prośbę o zamianę',
-            type='swap_update'
-        )
-        db.session.add(notification)
-        
-        db.session.delete(swap)
-        db.session.commit()
-        logger.info(f"Swap request {swap_id} canceled by user {user_id}")
-        return jsonify({'message': 'Swap request canceled successfully'})
-    
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Cancel swap error: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({'error': 'An error occurred'}), 500
-
-@app.route('/api/notifications', methods=['GET'])
-@jwt_required()
-def get_notifications():
-    user_id = get_jwt_identity()
-    try:
-        notifications = db.session.query(Notification).filter_by(
-            user_id=user_id
-        ).order_by(Notification.created_at.desc()).all()
-        
-        return jsonify([{
-            'id': n.id,
-            'title': n.title,
-            'message': n.message,
-            'type': n.type,
-            'is_read': n.is_read,
-            'created_at': n.created_at.isoformat()
-        } for n in notifications])
-    
-    except Exception as e:
-        logger.error(f"Get notifications error: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({'error': 'An error occurred'}), 500
-
-@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
-@jwt_required()
-def mark_notification_read(notification_id):
-    user_id = get_jwt_identity()
-    try:
-        notification = db.session.query(Notification).get(notification_id)
-        
-        if not notification or notification.user_id != int(user_id):
-            return jsonify({'error': 'Notification not found or access denied'}), 404
-        
-        notification.is_read = True
-        db.session.commit()
-        logger.info(f"Notification {notification_id} marked as read by user {user_id}")
-        return jsonify({'message': 'Notification marked as read'})
-    
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Mark notification read error: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({'error': 'An error occurred'}), 500
 
 @app.route('/api/me', methods=['GET'])
 @jwt_required()
@@ -1125,6 +921,13 @@ def unauthorized_callback(callback):
 def invalid_token_callback(callback):
     return jsonify({'error': 'Invalid token'}), 401
 
+
+# Добавьте это перед запуском приложения
+with app.app_context():
+    db.drop_all()
+    db.create_all()
+    logger.info("Все таблицы пересозданы")
+
 # =========================
 # ЗАПУСК ПРИЛОЖЕНИЯ
 # =========================
@@ -1133,6 +936,7 @@ if __name__ == '__main__':
         db.create_all()
     logger.info("Successfully connected to the database and ensured tables exist")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
 
 
 
