@@ -56,7 +56,7 @@ class User(db.Model):
     password_hash = db.Column(db.String, nullable=False)
     full_name = db.Column(db.String, unique=True, nullable=False)
     role = db.Column(db.String, default='user', nullable=False)
-    phone = db.Column(db.String, nullable=True)
+    # phone = db.Column(db.String, nullable=True)
     language = db.Column(db.String, default='pl')
     theme = db.Column(db.String, default='light')
     font_size = db.Column(db.String, default='medium')
@@ -228,7 +228,7 @@ def register():
             email=data['email'],
             full_name=data['full_name'],
             role=data.get('role', 'user'),
-            phone=data.get('phone')
+            # phone=data.get('phone')
         )
         user.set_password(data['password'])
         
@@ -249,7 +249,7 @@ def register():
                 'email': user.email,
                 'full_name': user.full_name,
                 'role': user.role,
-                'phone': user.phone
+                # 'phone': user.phone
             }
         }), 201
     
@@ -285,7 +285,7 @@ def login():
                 'email': user.email,
                 'full_name': user.full_name,
                 'role': user.role,
-                'phone': user.phone
+                # 'phone': user.phone
             }
         })
     
@@ -620,7 +620,7 @@ def get_current_user():
             'email': user.email,
             'full_name': user.full_name,
             'role': user.role,
-            'phone': user.phone,
+            # 'phone': user.phone,
             'language': user.language,
             'theme': user.theme,
             'font_size': user.font_size,
@@ -794,7 +794,7 @@ def get_today_shifts():
                 'user': {
                     'id': user.id,
                     'full_name': user.full_name,
-                    'phone': user.phone,
+                    #'phone': user.phone,
                     'role': user.role
                 }
             })
@@ -938,8 +938,8 @@ def update_profile():
                 return jsonify({'error': 'User with this email already exists'}), 400
             user.email = data['email']
         
-        if 'phone' in data:
-            user.phone = data['phone']
+        # if 'phone' in data:
+           # user.phone = data['phone']
         
         if 'language' in data:
             user.language = data['language']
@@ -965,7 +965,7 @@ def update_profile():
                 'email': user.email,
                 'full_name': user.full_name,
                 'role': user.role,
-                'phone': user.phone,
+                # 'phone': user.phone,
                 'language': user.language,
                 'theme': user.theme,
                 'font_size': user.font_size,
@@ -1133,6 +1133,7 @@ if __name__ == '__main__':
         db.create_all()
     logger.info("Successfully connected to the database and ensured tables exist")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
 
 
 
