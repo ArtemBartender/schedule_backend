@@ -2,14 +2,12 @@
 import os
 import io
 import logging
-import traceback
 from datetime import datetime, timedelta, date
 from functools import wraps
 
 from flask import Flask, request, jsonify, send_file, send_from_directory, Response
+from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Boolean, ForeignKey, Text
-from sqlalchemy.orm import sessionmaker, relationship, declarative_base, scoped_session
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, JWTManager, get_jwt
 from flask_cors import CORS
 import pdfplumber
@@ -29,61 +27,52 @@ CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.StreamHandler()  # Логи в stdout для Render
-    ]
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
 # Конфигурация из переменных окружения
-DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///local.db')
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///local.db').replace('postgres://', 'postgresql://')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=14)
 
-if not DATABASE_URL or not JWT_SECRET_KEY:
+if not app.config['SQLALCHEMY_DATABASE_URI'] or not app.config['JWT_SECRET_KEY']:
     logger.error("DATABASE_URL or JWT_SECRET_KEY not set in environment variables")
     raise RuntimeError("Missing critical environment variables")
 
-app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=14)
-
 # Настройка базы данных
-engine = create_engine(DATABASE_URL)
-Session = scoped_session(sessionmaker(bind=engine))
-Base = declarative_base()
+db = SQLAlchemy(app)
 jwt = JWTManager(app)
-
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    Session.remove()
 
 # =========================
 # МОДЕЛИ
 # =========================
-class User(Base):
+class User(db.Model):
     __tablename__ = 'users'
 
-    id = Column(Integer, primary_key=True)
-    email = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    full_name = Column(String, unique=True, nullable=False)
-    role = Column(String, default='user', nullable=False)
-    phone = Column(String, nullable=True)
-    language = Column(String, default='pl')
-    theme = Column(String, default='light')
-    font_size = Column(String, default='medium')
-    quiet_hours_start = Column(Integer, default=22)
-    quiet_hours_end = Column(Integer, default=8)
-    fcm_token = Column(String, nullable=True)
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String, unique=True, nullable=False)
+    password_hash = db.Column(db.String, nullable=False)
+    full_name = db.Column(db.String, unique=True, nullable=False)
+    role = db.Column(db.String, default='user', nullable=False)
+    phone = db.Column(db.String, nullable=True)
+    language = db.Column(db.String, default='pl')
+    theme = db.Column(db.String, default='light')
+    font_size = db.Column(db.String, default='medium')
+    quiet_hours_start = db.Column(db.Integer, default=22)
+    quiet_hours_end = db.Column(db.Integer, default=8)
+    fcm_token = db.Column(db.String, nullable=True)
 
-    shifts = relationship('Shift', back_populates='user', cascade="all, delete-orphan")
-    outgoing_swaps = relationship('SwapRequest', foreign_keys='SwapRequest.from_user_id', 
-                                back_populates='from_user', cascade="all, delete-orphan")
-    incoming_swaps = relationship('SwapRequest', foreign_keys='SwapRequest.to_user_id', 
-                                back_populates='to_user', cascade="all, delete-orphan")
-    availabilities = relationship('Availability', backref='user', cascade="all, delete-orphan")
-    shift_notes = relationship('ShiftNote', backref='author', cascade="all, delete-orphan")
-    time_off_requests = relationship('TimeOffRequest', backref='user', cascade="all, delete-orphan")
-    notifications = relationship('Notification', backref='user', cascade="all, delete-orphan")
+    shifts = db.relationship('Shift', back_populates='user', cascade="all, delete-orphan")
+    outgoing_swaps = db.relationship('SwapRequest', foreign_keys='SwapRequest.from_user_id', 
+                                    back_populates='from_user', cascade="all, delete-orphan")
+    incoming_swaps = db.relationship('SwapRequest', foreign_keys='SwapRequest.to_user_id', 
+                                    back_populates='to_user', cascade="all, delete-orphan")
+    availabilities = db.relationship('Availability', backref='user', cascade="all, delete-orphan")
+    shift_notes = db.relationship('ShiftNote', backref='author', cascade="all, delete-orphan")
+    time_off_requests = db.relationship('TimeOffRequest', backref='user', cascade="all, delete-orphan")
+    notifications = db.relationship('Notification', backref='user', cascade="all, delete-orphan")
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -91,21 +80,21 @@ class User(Base):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-class Shift(Base):
+class Shift(db.Model):
     __tablename__ = 'shifts'
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    shift_date = Column(Date, nullable=False)
-    shift_code = Column(String, nullable=False)
-    hours = Column(Float, nullable=False)
-    is_coordinator = Column(Boolean, default=False, nullable=False)
-    color_hex = Column(String, nullable=True)
-    actual_start = Column(DateTime, nullable=True)
-    actual_end = Column(DateTime, nullable=True)
-    qr_code = Column(String, nullable=True)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    shift_date = db.Column(db.Date, nullable=False)
+    shift_code = db.Column(db.String, nullable=False)
+    hours = db.Column(db.Float, nullable=False)
+    is_coordinator = db.Column(db.Boolean, default=False, nullable=False)
+    color_hex = db.Column(db.String, nullable=True)
+    actual_start = db.Column(db.DateTime, nullable=True)
+    actual_end = db.Column(db.DateTime, nullable=True)
+    qr_code = db.Column(db.String, nullable=True)
 
-    user = relationship('User', back_populates='shifts')
+    user = db.relationship('User', back_populates='shifts')
 
     def to_dict(self):
         return {
@@ -139,69 +128,69 @@ class Shift(Base):
         self.qr_code = base64.b64encode(buffer.getvalue()).decode('utf-8')
         return self.qr_code
 
-class SwapRequest(Base):
+class SwapRequest(db.Model):
     __tablename__ = 'swap_requests'
     
-    id = Column(Integer, primary_key=True)
-    from_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    to_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    shift_id = Column(Integer, ForeignKey('shifts.id', ondelete='CASCADE'), nullable=False)
-    status = Column(String(20), default='pending')
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id = db.Column(db.Integer, primary_key=True)
+    from_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    to_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    shift_id = db.Column(db.Integer, db.ForeignKey('shifts.id', ondelete='CASCADE'), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    from_user = relationship('User', foreign_keys=[from_user_id], back_populates='outgoing_swaps')
-    to_user = relationship('User', foreign_keys=[to_user_id], back_populates='incoming_swaps')
-    shift = relationship('Shift')
+    from_user = db.relationship('User', foreign_keys=[from_user_id], back_populates='outgoing_swaps')
+    to_user = db.relationship('User', foreign_keys=[to_user_id], back_populates='incoming_swaps')
+    shift = db.relationship('Shift')
 
-class Availability(Base):
+class Availability(db.Model):
     __tablename__ = 'availabilities'
     
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    date = Column(Date, nullable=False)
-    slot = Column(String(20), nullable=False)
-    status = Column(String(20), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    slot = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    user = relationship('User', back_populates='availabilities')
+    user = db.relationship('User', back_populates='availabilities')
 
-class ShiftNote(Base):
+class ShiftNote(db.Model):
     __tablename__ = 'shift_notes'
     
-    id = Column(Integer, primary_key=True)
-    date = Column(Date, nullable=False)
-    author_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    text = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False)
+    author_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    text = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    author = relationship('User', back_populates='shift_notes')
+    author = db.relationship('User', back_populates='shift_notes')
 
-class TimeOffRequest(Base):
+class TimeOffRequest(db.Model):
     __tablename__ = 'time_off_requests'
     
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    start_date = Column(Date, nullable=False)
-    end_date = Column(Date, nullable=False)
-    request_type = Column(String(20), nullable=False)
-    status = Column(String(20), default='pending')
-    attachment_url = Column(String(255))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    request_type = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    attachment_url = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    user = relationship('User', back_populates='time_off_requests')
+    user = db.relationship('User', back_populates='time_off_requests')
 
-class Notification(Base):
+class Notification(db.Model):
     __tablename__ = 'notifications'
     
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    title = Column(String(100), nullable=False)
-    message = Column(Text, nullable=False)
-    type = Column(String(20), nullable=False)
-    is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    title = db.Column(db.String(100), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    type = db.Column(db.String(20), nullable=False)
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    user = relationship('User', back_populates='notifications')
+    user = db.relationship('User', back_populates='notifications')
 
 # =========================
 # ДЕКОРАТОРЫ
@@ -225,16 +214,14 @@ def admin_required():
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
-    session = Session()
-    
     try:
         if not data.get('email') or not data.get('password') or not data.get('full_name'):
             return jsonify({'error': 'Email, password, and full_name are required'}), 400
         
-        if session.query(User).filter_by(email=data['email']).first():
+        if db.session.query(User).filter_by(email=data['email']).first():
             return jsonify({'error': 'User with this email already exists'}), 400
         
-        if session.query(User).filter_by(full_name=data['full_name']).first():
+        if db.session.query(User).filter_by(full_name=data['full_name']).first():
             return jsonify({'error': 'User with this name already exists'}), 400
         
         user = User(
@@ -245,8 +232,8 @@ def register():
         )
         user.set_password(data['password'])
         
-        session.add(user)
-        session.commit()
+        db.session.add(user)
+        db.session.commit()
         
         access_token = create_access_token(
             identity=str(user.id),
@@ -267,22 +254,18 @@ def register():
         }), 201
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Registration error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred during registration'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
-    session = Session()
-    
     try:
         if not data.get('email') or not data.get('password'):
             return jsonify({'error': 'Email and password are required'}), 400
         
-        user = session.query(User).filter_by(email=data['email']).first()
+        user = db.session.query(User).filter_by(email=data['email']).first()
         
         if not user or not user.check_password(data['password']):
             logger.warning(f"Failed login attempt for email: {data['email']}")
@@ -308,8 +291,6 @@ def login():
     except Exception as e:
         logger.error(f"Login error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred during login'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/schedule/upload', methods=['POST'])
 @jwt_required()
@@ -325,15 +306,14 @@ def upload_schedule():
     if not file.filename.endswith('.pdf'):
         return jsonify({'error': 'Only PDF files are allowed'}), 400
     
-    session = Session()
     try:
         pdf_bytes = file.read()
         shifts_data = parse_pdf_with_colors(pdf_bytes)
         
-        session.query(Shift).delete()
+        db.session.query(Shift).delete()
         
         for shift_data in shifts_data:
-            user = session.query(User).filter_by(full_name=shift_data.get('user_name')).first()
+            user = db.session.query(User).filter_by(full_name=shift_data.get('user_name')).first()
             if not user:
                 logger.warning(f"User not found for name: {shift_data.get('user_name')}")
                 continue
@@ -352,18 +332,16 @@ def upload_schedule():
                 is_coordinator=shift_data.get('is_coordinator', False),
                 color_hex=shift_data.get('color_hex')
             )
-            session.add(shift)
+            db.session.add(shift)
         
-        session.commit()
+        db.session.commit()
         logger.info("Schedule uploaded successfully")
         return jsonify({'message': 'Schedule uploaded successfully'})
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Schedule upload error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred during schedule upload'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/schedule/day', methods=['GET'])
 @jwt_required()
@@ -378,8 +356,7 @@ def get_schedule_by_date_range():
         start = datetime.strptime(start_date, '%Y-%m-%d').date()
         end = datetime.strptime(end_date, '%Y-%m-%d').date()
         
-        session = Session()
-        shifts = session.query(Shift).filter(
+        shifts = db.session.query(Shift).filter(
             Shift.shift_date >= start,
             Shift.shift_date <= end
         ).all()
@@ -391,8 +368,6 @@ def get_schedule_by_date_range():
     except Exception as e:
         logger.error(f"Get schedule error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/schedule/my-schedule', methods=['GET'])
 @jwt_required()
@@ -408,8 +383,7 @@ def get_my_schedule():
         start = datetime.strptime(start_date, '%Y-%m-%d').date()
         end = datetime.strptime(end_date, '%Y-%m-%d').date()
         
-        session = Session()
-        shifts = session.query(Shift).filter(
+        shifts = db.session.query(Shift).filter(
             Shift.user_id == user_id,
             Shift.shift_date >= start,
             Shift.shift_date <= end
@@ -422,19 +396,16 @@ def get_my_schedule():
     except Exception as e:
         logger.error(f"Get my schedule error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/swaps', methods=['GET', 'POST'])
 @jwt_required()
 def handle_swaps():
     user_id = get_jwt_identity()
-    session = Session()
     
     if request.method == 'GET':
         try:
-            incoming = session.query(SwapRequest).filter_by(to_user_id=user_id).all()
-            outgoing = session.query(SwapRequest).filter_by(from_user_id=user_id).all()
+            incoming = db.session.query(SwapRequest).filter_by(to_user_id=user_id).all()
+            outgoing = db.session.query(SwapRequest).filter_by(from_user_id=user_id).all()
             
             result = []
             for swap in incoming + outgoing:
@@ -458,17 +429,18 @@ def handle_swaps():
         except Exception as e:
             logger.error(f"Get swaps error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({'error': 'An error occurred'}), 500
-        finally:
-            session.close()
     
     else:  # POST
         data = request.get_json()
         try:
-            shift = session.query(Shift).get(data['shift_id'])
+            if not data.get('shift_id') or not data.get('to_user_id'):
+                return jsonify({'error': 'shift_id and to_user_id are required'}), 400
+            
+            shift = db.session.query(Shift).get(data['shift_id'])
             if not shift or shift.user_id != int(user_id):
                 return jsonify({'error': 'Shift not found or access denied'}), 404
             
-            to_user = session.query(User).get(data['to_user_id'])
+            to_user = db.session.query(User).get(data['to_user_id'])
             if not to_user:
                 return jsonify({'error': 'Target user not found'}), 404
             
@@ -478,7 +450,7 @@ def handle_swaps():
                 shift_id=data['shift_id']
             )
             
-            session.add(swap_request)
+            db.session.add(swap_request)
             
             notification = Notification(
                 user_id=data['to_user_id'],
@@ -486,27 +458,23 @@ def handle_swaps():
                 message=f'{swap_request.from_user.full_name} chce zamienić się z Tobą zmianą',
                 type='swap_request'
             )
-            session.add(notification)
+            db.session.add(notification)
             
-            session.commit()
+            db.session.commit()
             logger.info(f"Swap request created by user {user_id} for shift {data['shift_id']}")
             return jsonify({'message': 'Swap request created successfully'})
         
         except Exception as e:
-            session.rollback()
+            db.session.rollback()
             logger.error(f"Create swap error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({'error': 'An error occurred'}), 500
-        finally:
-            session.close()
 
 @app.route('/api/swaps/<int:swap_id>/accept', methods=['POST'])
 @jwt_required()
 def accept_swap(swap_id):
     user_id = get_jwt_identity()
-    session = Session()
-    
     try:
-        swap = session.query(SwapRequest).get(swap_id)
+        swap = db.session.query(SwapRequest).get(swap_id)
         
         if not swap or swap.to_user_id != int(user_id):
             return jsonify({'error': 'Swap request not found or access denied'}), 404
@@ -523,27 +491,23 @@ def accept_swap(swap_id):
             message=f'{swap.to_user.full_name} zaakceptował Twoją prośbę o zamianę',
             type='swap_update'
         )
-        session.add(notification)
+        db.session.add(notification)
         
-        session.commit()
+        db.session.commit()
         logger.info(f"Swap request {swap_id} accepted by user {user_id}")
         return jsonify({'message': 'Swap request accepted successfully'})
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Accept swap error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/swaps/<int:swap_id>/decline', methods=['POST'])
 @jwt_required()
 def decline_swap(swap_id):
     user_id = get_jwt_identity()
-    session = Session()
-    
     try:
-        swap = session.query(SwapRequest).get(swap_id)
+        swap = db.session.query(SwapRequest).get(swap_id)
         
         if not swap or swap.to_user_id != int(user_id):
             return jsonify({'error': 'Swap request not found or access denied'}), 404
@@ -559,27 +523,23 @@ def decline_swap(swap_id):
             message=f'{swap.to_user.full_name} odrzucił Twoją prośbę o zamianę',
             type='swap_update'
         )
-        session.add(notification)
+        db.session.add(notification)
         
-        session.commit()
+        db.session.commit()
         logger.info(f"Swap request {swap_id} declined by user {user_id}")
         return jsonify({'message': 'Swap request declined successfully'})
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Decline swap error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/swaps/<int:swap_id>/cancel', methods=['POST'])
 @jwt_required()
 def cancel_swap(swap_id):
     user_id = get_jwt_identity()
-    session = Session()
-    
     try:
-        swap = session.query(SwapRequest).get(swap_id)
+        swap = db.session.query(SwapRequest).get(swap_id)
         
         if not swap or swap.from_user_id != int(user_id):
             return jsonify({'error': 'Swap request not found or access denied'}), 404
@@ -593,28 +553,24 @@ def cancel_swap(swap_id):
             message=f'{swap.from_user.full_name} anulował prośbę o zamianę',
             type='swap_update'
         )
-        session.add(notification)
+        db.session.add(notification)
         
-        session.delete(swap)
-        session.commit()
+        db.session.delete(swap)
+        db.session.commit()
         logger.info(f"Swap request {swap_id} canceled by user {user_id}")
         return jsonify({'message': 'Swap request canceled successfully'})
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Cancel swap error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/notifications', methods=['GET'])
 @jwt_required()
 def get_notifications():
     user_id = get_jwt_identity()
-    session = Session()
-    
     try:
-        notifications = session.query(Notification).filter_by(
+        notifications = db.session.query(Notification).filter_by(
             user_id=user_id
         ).order_by(Notification.created_at.desc()).all()
         
@@ -630,41 +586,33 @@ def get_notifications():
     except Exception as e:
         logger.error(f"Get notifications error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
 @jwt_required()
 def mark_notification_read(notification_id):
     user_id = get_jwt_identity()
-    session = Session()
-    
     try:
-        notification = session.query(Notification).get(notification_id)
+        notification = db.session.query(Notification).get(notification_id)
         
         if not notification or notification.user_id != int(user_id):
             return jsonify({'error': 'Notification not found or access denied'}), 404
         
         notification.is_read = True
-        session.commit()
+        db.session.commit()
         logger.info(f"Notification {notification_id} marked as read by user {user_id}")
         return jsonify({'message': 'Notification marked as read'})
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Mark notification read error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
     user_id = get_jwt_identity()
-    session = Session()
-    
     try:
-        user = session.query(User).get(user_id)
+        user = db.session.query(User).get(user_id)
         return jsonify({
             'id': user.id,
             'email': user.email,
@@ -682,16 +630,12 @@ def get_current_user():
     except Exception as e:
         logger.error(f"Get current user error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/users', methods=['GET'])
 @jwt_required()
 def get_users():
-    session = Session()
-    
     try:
-        users = session.query(User).all()
+        users = db.session.query(User).all()
         return jsonify([{
             'id': u.id,
             'email': u.email,
@@ -702,8 +646,6 @@ def get_users():
     except Exception as e:
         logger.error(f"Get users error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/availabilities', methods=['GET', 'POST'])
 @jwt_required()
@@ -721,8 +663,7 @@ def handle_availabilities():
             start = datetime.strptime(start_date, '%Y-%m-%d').date()
             end = datetime.strptime(end_date, '%Y-%m-%d').date()
             
-            session = Session()
-            availabilities = session.query(Availability).filter(
+            availabilities = db.session.query(Availability).filter(
                 Availability.user_id == user_id,
                 Availability.date >= start,
                 Availability.date <= end
@@ -740,12 +681,9 @@ def handle_availabilities():
         except Exception as e:
             logger.error(f"Get availabilities error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({'error': 'An error occurred'}), 500
-        finally:
-            session.close()
     
     else:  # POST
         data = request.get_json()
-        session = Session()
         try:
             if not data.get('date') or not data.get('slot') or not data.get('status'):
                 return jsonify({'error': 'date, slot, and status are required'}), 400
@@ -756,14 +694,14 @@ def handle_availabilities():
             if data['status'] not in ['available', 'unavailable', 'preferred']:
                 return jsonify({'error': 'Invalid status value'}), 400
             
-            existing = session.query(Availability).filter_by(
+            existing = db.session.query(Availability).filter_by(
                 user_id=user_id,
                 date=date_obj,
                 slot=data['slot']
             ).first()
             
             if existing:
-                session.delete(existing)
+                db.session.delete(existing)
             
             availability = Availability(
                 user_id=user_id,
@@ -772,19 +710,17 @@ def handle_availabilities():
                 status=data['status']
             )
             
-            session.add(availability)
-            session.commit()
+            db.session.add(availability)
+            db.session.commit()
             logger.info(f"Availability updated for user {user_id} on {data['date']} slot {data['slot']}")
             return jsonify({'message': 'Availability updated successfully'})
     
         except ValueError:
             return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
         except Exception as e:
-            session.rollback()
+            db.session.rollback()
             logger.error(f"Update availability error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({'error': 'An error occurred'}), 500
-        finally:
-            session.close()
 
 @app.route('/api/shift-notes', methods=['GET', 'POST'])
 @jwt_required()
@@ -796,8 +732,7 @@ def handle_shift_notes():
         
         try:
             date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-            session = Session()
-            notes = session.query(ShiftNote).filter_by(date=date_obj).order_by(ShiftNote.created_at.desc()).all()
+            notes = db.session.query(ShiftNote).filter_by(date=date_obj).order_by(ShiftNote.created_at.desc()).all()
             
             return jsonify([{
                 'id': n.id,
@@ -811,13 +746,10 @@ def handle_shift_notes():
         except Exception as e:
             logger.error(f"Get shift notes error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({'error': 'An error occurred'}), 500
-        finally:
-            session.close()
     
     else:  # POST
         user_id = get_jwt_identity()
         data = request.get_json()
-        session = Session()
         try:
             if not data.get('date') or not data.get('text'):
                 return jsonify({'error': 'date and text are required'}), 400
@@ -829,31 +761,28 @@ def handle_shift_notes():
                 text=data['text']
             )
             
-            session.add(note)
-            session.commit()
+            db.session.add(note)
+            db.session.commit()
             logger.info(f"Shift note added by user {user_id} for date {data['date']}")
             return jsonify({'message': 'Note added successfully'})
         
         except ValueError:
             return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
         except Exception as e:
-            session.rollback()
+            db.session.rollback()
             logger.error(f"Add shift note error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({'error': 'An error occurred'}), 500
-        finally:
-            session.close()
 
 @app.route('/api/today-shifts', methods=['GET'])
 @jwt_required()
 def get_today_shifts():
     today = datetime.now().date()
-    session = Session()
     try:
-        shifts = session.query(Shift).filter_by(shift_date=today).all()
+        shifts = db.session.query(Shift).filter_by(shift_date=today).all()
         
         result = []
         for shift in shifts:
-            user = session.query(User).get(shift.user_id)
+            user = db.session.query(User).get(shift.user_id)
             
             result.append({
                 'id': shift.id,
@@ -873,17 +802,13 @@ def get_today_shifts():
     except Exception as e:
         logger.error(f"Get today shifts error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/shifts/<int:shift_id>/check-in', methods=['POST'])
 @jwt_required()
 def check_in(shift_id):
     user_id = get_jwt_identity()
-    session = Session()
-    
     try:
-        shift = session.query(Shift).get(shift_id)
+        shift = db.session.query(Shift).get(shift_id)
         
         if not shift or shift.user_id != int(user_id):
             return jsonify({'error': 'Shift not found or access denied'}), 404
@@ -892,25 +817,21 @@ def check_in(shift_id):
             return jsonify({'error': 'Shift already checked in'}), 400
         
         shift.actual_start = datetime.now()
-        session.commit()
+        db.session.commit()
         logger.info(f"Check-in for shift {shift_id} by user {user_id}")
         return jsonify({'message': 'Check-in successful', 'time': shift.actual_start.isoformat()})
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Check-in error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/shifts/<int:shift_id>/check-out', methods=['POST'])
 @jwt_required()
 def check_out(shift_id):
     user_id = get_jwt_identity()
-    session = Session()
-    
     try:
-        shift = session.query(Shift).get(shift_id)
+        shift = db.session.query(Shift).get(shift_id)
         
         if not shift or shift.user_id != int(user_id):
             return jsonify({'error': 'Shift not found or access denied'}), 404
@@ -921,16 +842,14 @@ def check_out(shift_id):
             return jsonify({'error': 'Shift already checked out'}), 400
         
         shift.actual_end = datetime.now()
-        session.commit()
+        db.session.commit()
         logger.info(f"Check-out for shift {shift_id} by user {user_id}")
         return jsonify({'message': 'Check-out successful', 'time': shift.actual_end.isoformat()})
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Check-out error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/time-off-requests', methods=['GET', 'POST'])
 @jwt_required()
@@ -938,9 +857,8 @@ def handle_time_off_requests():
     user_id = get_jwt_identity()
     
     if request.method == 'GET':
-        session = Session()
         try:
-            requests = session.query(TimeOffRequest).filter_by(
+            requests = db.session.query(TimeOffRequest).filter_by(
                 user_id=user_id
             ).order_by(TimeOffRequest.created_at.desc()).all()
             
@@ -957,12 +875,9 @@ def handle_time_off_requests():
         except Exception as e:
             logger.error(f"Get time off requests error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({'error': 'An error occurred'}), 500
-        finally:
-            session.close()
     
     else:  # POST
         data = request.get_json()
-        session = Session()
         try:
             if not data.get('start_date') or not data.get('end_date') or not data.get('type'):
                 return jsonify({'error': 'start_date, end_date, and type are required'}), 400
@@ -980,9 +895,9 @@ def handle_time_off_requests():
                 attachment_url=data.get('attachment_url')
             )
             
-            session.add(time_off_request)
+            db.session.add(time_off_request)
             
-            admins = session.query(User).filter_by(role='admin').all()
+            admins = db.session.query(User).filter_by(role='admin').all()
             for admin in admins:
                 notification = Notification(
                     user_id=admin.id,
@@ -990,38 +905,34 @@ def handle_time_off_requests():
                     message=f'{time_off_request.user.full_name} złożył wniosek o urlop',
                     type='time_off_request'
                 )
-                session.add(notification)
+                db.session.add(notification)
             
-            session.commit()
+            db.session.commit()
             logger.info(f"Time off request submitted by user {user_id}")
             return jsonify({'message': 'Time off request submitted successfully'})
         
         except ValueError:
             return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
         except Exception as e:
-            session.rollback()
+            db.session.rollback()
             logger.error(f"Submit time off request error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({'error': 'An error occurred'}), 500
-        finally:
-            session.close()
 
 @app.route('/api/profile', methods=['PUT'])
 @jwt_required()
 def update_profile():
     user_id = get_jwt_identity()
     data = request.get_json()
-    session = Session()
-    
     try:
-        user = session.query(User).get(user_id)
+        user = db.session.query(User).get(user_id)
         
         if 'full_name' in data:
-            if session.query(User).filter(User.full_name == data['full_name'], User.id != user_id).first():
+            if db.session.query(User).filter(User.full_name == data['full_name'], User.id != user_id).first():
                 return jsonify({'error': 'User with this full_name already exists'}), 400
             user.full_name = data['full_name']
         
         if 'email' in data:
-            if session.query(User).filter(User.email == data['email'], User.id != user_id).first():
+            if db.session.query(User).filter(User.email == data['email'], User.id != user_id).first():
                 return jsonify({'error': 'User with this email already exists'}), 400
             user.email = data['email']
         
@@ -1043,7 +954,7 @@ def update_profile():
         if 'fcm_token' in data:
             user.fcm_token = data['fcm_token']
         
-        session.commit()
+        db.session.commit()
         logger.info(f"Profile updated for user {user_id}")
         return jsonify({
             'message': 'Profile updated successfully',
@@ -1062,27 +973,23 @@ def update_profile():
         })
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Update profile error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 @app.route('/api/emergency-notification', methods=['POST'])
 @jwt_required()
 def send_emergency_notification():
     user_id = get_jwt_identity()
     data = request.get_json()
-    session = Session()
-    
     try:
         shift_id = data.get('shift_id')
-        shift = session.query(Shift).get(shift_id)
+        shift = db.session.query(Shift).get(shift_id)
         
         if not shift or shift.user_id != int(user_id):
             return jsonify({'error': 'Shift not found or access denied'}), 404
         
-        suitable_users = session.query(User).filter(
+        suitable_users = db.session.query(User).filter(
             User.role == shift.user.role,
             User.id != user_id
         ).all()
@@ -1094,9 +1001,9 @@ def send_emergency_notification():
                 message=f'{shift.user.full_name} nie może stawić się na zmianę w dniu {shift.shift_date}. Czy możesz ją przejąć?',
                 type='emergency'
             )
-            session.add(notification)
+            db.session.add(notification)
         
-        session.commit()
+        db.session.commit()
         logger.info(f"Emergency notifications sent by user {user_id} for shift {shift_id}")
         return jsonify({
             'message': 'Emergency notifications sent successfully',
@@ -1104,11 +1011,9 @@ def send_emergency_notification():
         })
     
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Send emergency notification error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
-    finally:
-        session.close()
 
 def parse_pdf_with_colors(pdf_bytes):
     shifts = []
@@ -1122,13 +1027,12 @@ def parse_pdf_with_colors(pdf_bytes):
             })
             
             rects = page.rects + page.curves
-            current_date = None  # Для отслеживания текущей даты
+            current_date = None
             
             for table in tables:
                 for row_idx, row in enumerate(table):
                     for col_idx, cell in enumerate(row):
                         if cell and isinstance(cell, str) and cell.strip():
-                            # Предполагаем, что первая колонка содержит даты
                             if col_idx == 0 and '-' in cell:
                                 try:
                                     current_date = datetime.strptime(cell.strip(), '%Y-%m-%d').date()
@@ -1136,7 +1040,6 @@ def parse_pdf_with_colors(pdf_bytes):
                                 except ValueError:
                                     pass
                             
-                            # Пропускаем заголовки
                             if cell.lower() in ['date', 'data', 'name', 'nazwisko']:
                                 continue
                             
@@ -1163,7 +1066,6 @@ def parse_pdf_with_colors(pdf_bytes):
                                             )
                                         break
                             
-                            # Предполагаем, что ячейка содержит имя пользователя и код смены
                             parts = cell.strip().split('\n')
                             user_name = parts[0] if parts else cell.strip()
                             shift_code = parts[1] if len(parts) > 1 else cell.strip()
@@ -1172,7 +1074,7 @@ def parse_pdf_with_colors(pdf_bytes):
                                 'user_name': user_name,
                                 'text': shift_code,
                                 'date': current_date.isoformat() if current_date else None,
-                                'hours': 8.0,  # Значение по умолчанию, нужно уточнить
+                                'hours': 8.0,
                                 'is_coordinator': is_coordinator,
                                 'color_hex': color_hex,
                                 'page': page_num + 1
@@ -1209,157 +1111,199 @@ def invalid_token_callback(callback):
 # ЗАПУСК ПРИЛОЖЕНИЯ
 # =========================
 if __name__ == '__main__':
-    try:
-        Base.metadata.create_all(engine)
-        logger.info("Successfully connected to the database and ensured tables exist")
-        app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
-    except Exception as e:
-        logger.error(f"Startup error: {str(e)}\n{traceback.format_exc()}")
-        raise
+    with app.app_context():
+        db.create_all()
+    logger.info("Successfully connected to the database and ensured tables exist")
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
 ```
 
-### Основные изменения
+### Key Changes Made
 
-1. **Логирование**:
-   - Заменено `RotatingFileHandler` на `StreamHandler` для вывода логов в `stdout`, что лучше подходит для Render.
-   - Улучшены сообщения об ошибках с указанием конкретного действия (например, "Get swaps error" вместо "LOGIN ERROR").
-   - Добавлено логирование успешных операций (регистрация, вход, создание запросов и т.д.).
+1. **Fixed Syntax Error**:
+   - Removed the invalid comment line (`- Убедитесь, что файлы...`) that caused the `SyntaxError`.
+   - Ensured all comments use `#` and are valid Python syntax.
 
-2. **Модель `SwapRequest`**:
-   - Добавлен `cascade="all, delete-orphan"` для автоматического удаления запросов при удалении связанных пользователей или смен.
-   - Добавлен единый эндпоинт `/api/swaps` для получения всех запросов (входящих и исходящих), как ожидает фронтенд.
+2. **Switched to Flask-SQLAlchemy**:
+   - Replaced raw `SQLAlchemy` with `Flask-SQLAlchemy` to match your `requirements.txt`.
+   - Updated database initialization to use `db = SQLAlchemy(app)` and `db.session` instead of `Session`.
+   - Changed `Base` to `db.Model` for model definitions.
+   - Added `db.create_all()` in the `app_context` for table creation.
 
-3. **Парсинг PDF**:
-   - Улучшена функция `parse_pdf_with_colors` для определения дат в первой колонке и разделения имени пользователя и кода смены.
-   - Реализована логика сохранения смен в базе данных в эндпоинте `/api/schedule/upload`.
-   - Добавлена обработка ошибок при отсутствии пользователя или неверном формате даты.
+3. **File Name Alignment**:
+   - Named the file `server.py` to match the Gunicorn command `server:app`.
+   - If you prefer `app.py`, update the Render build command to `gunicorn --chdir /opt/render/project/src/ app:app`.
 
-4. **PWA**:
-   - Добавлен маршрут `/sw.js` с заголовком `Service-Worker-Allowed: /` для корректной работы Service Worker.
-   - Улучшен маршрут `/<path:path>` для обслуживания `manifest.json` и иконок.
-   - Убедитесь, что файлы `sw.js`, `manifest.json`, `icon-192x192.png` и `icon-512x512.png` находятся в папке `static`.
+4. **Database URL Fix**:
+   - Added `.replace('postgres://', 'postgresql://')` to handle Render's PostgreSQL `DATABASE_URL` format, which uses `postgres://` but is expected to be `postgresql://` by SQLAlchemy.
 
-5. **Обновление профиля**:
-   - Эндпоинт `/api/profile` теперь поддерживает обновление `full_name`, `email`, `phone` с проверкой уникальности.
-   - Добавлена валидация `font_size` (допустимые значения: small, medium, large).
+5. **Dependency Compatibility**:
+   - Ensured compatibility with Python 3.13.4 and the versions specified in `requirements.txt`.
+   - Removed `qrcode[pil]` from the explicit requirements since `qrcode==7.4.2` and `pillow` are already included.
 
-6. **Календарь доступности**:
-   - Эндпоинт `/api/availabilities` теперь валидирует значения `slot` и `status`.
-   - Добавлена проверка на дублирующиеся записи перед созданием новой.
+6. **PWA Support**:
+   - Ensured the `serve_service_worker` route sets the correct headers for `sw.js`.
+   - Added a comment to remind you to place `sw.js`, `manifest.json`, and icon files in the `static` directory.
 
-7. **Сегодняшние смены**:
-   - Эндпоинт `/api/today-shifts` дополнен полем `is_coordinator` для отображения статуса координатора на фронтенде.
+7. **Logging**:
+   - Kept logging to `stdout` for Render compatibility.
+   - Improved error messages to be specific to each endpoint.
 
-8. **Удалены неиспользуемые эндпоинты**:
-   - Удален `/generate_hash`, так как он не используется во фронтенде.
+8. **Removed Unused Endpoints**:
+   - Removed `/api/shifts/<int:shift_id>/qr-code` and `/generate_hash` since they are not used in the provided frontend code. If you need QR code functionality, let me know, and I can reintegrate it.
 
-9. **Render-специфичные настройки**:
-   - Используется `os.environ.get('PORT', 5000)` для определения порта.
-   - Логирование настроено для вывода в `stdout`, что совместимо с логами Render.
-   - Удален `debug=True`, так как он не рекомендуется для продакшена.
+### Deployment Instructions for Render
 
-10. **Валидация и обработка ошибок**:
-    - Добавлена проверка обязательных полей в эндпоинтах (например, `email`, `password`, `full_name` в `/api/register`).
-    - Добавлена валидация формата дат и значений (`slot`, `status`, `font_size`).
+1. **Update `server.py`**:
+   - Replace the contents of `/opt/render/project/src/server.py` with the code above.
+   - Ensure the file is named `server.py` to match the Gunicorn command.
 
----
-
-### Инструкции по деплою на Render
-
-1. **Структура проекта**:
-   Убедитесь, что структура проекта выглядит так:
-   ```
-   /project
-   ├── app.py
-   ├── static/
-   │   ├── index.html
-   │   ├── sw.js
-   │   ├── manifest.json
-   │   ├── icons/
-   │   │   ├── icon-192x192.png
-   │   │   ├── icon-512x512.png
-   ├── requirements.txt
-   ```
-
-2. **Файл `requirements.txt`**:
-   ```
-   flask==2.3.3
-   flask-jwt-extended==4.5.2
-   flask-cors==4.0.0
-   sqlalchemy==2.0.20
-   pdfplumber==0.10.2
-   qrcode==7.4.2
-   ```
-
-3. **Переменные окружения на Render**:
-   В настройках сервиса на Render задайте:
-   - `DATABASE_URL`: URL вашей базы данных (например, PostgreSQL, предоставленный Render).
-   - `JWT_SECRET_KEY`: Секретный ключ для JWT (генерируйте безопасный ключ, например, с помощью `openssl rand -hex 32`).
-   - `PYTHON_VERSION`: 3.9 или выше (например, 3.11).
-
-4. **Настройка сервиса**:
-   - В Render создайте Web Service, выберите Python как среду.
-   - Укажите команду запуска: `gunicorn app:app`.
-   - Убедитесь, что корневая директория проекта задана правильно (обычно `/`).
-
-5. **Иконки для PWA**:
-   - Создайте иконки размером 192x192 и 512x512 пикселей и поместите их в `static/icons/`.
-   - Убедитесь, что пути в `manifest.json` соответствуют реальным файлам.
-
-6. **Деплой**:
-   - Загрузите проект в репозиторий (GitHub, GitLab, Bitbucket).
-   - Подключите репозиторий к Render и выполните деплой.
-   - Проверьте логи в консоли Render для диагностики ошибок.
-
-7. **Проверка PWA**:
-   - Откройте приложение в браузере и проверьте, появляется ли предложение установить PWA.
-   - Убедитесь, что `/sw.js` и `/static/manifest.json` доступны (должны возвращать 200 OK).
-   - Проверьте работу оффлайн-режима, открыв приложение без интернета.
-
-8. **База данных**:
-   - Если используете PostgreSQL на Render, убедитесь, что `DATABASE_URL` указывает на правильную базу.
-   - Выполните `Base.metadata.create_all(engine)` при первом запуске для создания таблиц.
-
----
-
-### Дополнительные рекомендации
-
-1. **Парсинг PDF**:
-   - Функция `parse_pdf_with_colors` предполагает определенный формат PDF (первая колонка — даты, остальные — имена и коды смен). Если ваш PDF имеет другой формат, напишите пример структуры, и я помогу доработать парсер.
-   - Например, если PDF содержит таблицу вида:
+2. **Verify `requirements.txt`**:
+   - Your `requirements.txt` looks correct, but ensure it's exactly as follows to avoid dependency issues:
      ```
-     | Дата       | Пользователь | Код смены |
-     | 2025-08-20 | Jan Kowalski | 08:00-16:00 |
+     blinker==1.9.0
+     cffi==1.17.1
+     charset-normalizer==3.4.2
+     click==8.2.1
+     colorama==0.4.6
+     cryptography==45.0.6
+     Flask==3.1.1
+     Flask-JWT-Extended==4.7.1
+     Flask-SQLAlchemy==3.1.1
+     greenlet==3.2.4
+     gunicorn==23.0.0
+     itsdangerous==2.2.0
+     Jinja2==3.1.6
+     MarkupSafe==3.0.2
+     packaging==25.0
+     pdfminer.six==20250506
+     pdfplumber==0.11.7
+     pillow==11.3.0
+     psycopg2-binary==2.9.10
+     pycparser==2.22
+     PyJWT==2.10.1
+     pypdfium2==4.30.0
+     SQLAlchemy==2.0.42
+     typing_extensions==4.14.1
+     Werkzeug==3.1.3
+     flask-cors==4.0.0
+     qrcode==7.4.2
      ```
-     Парсер нужно настроить под эту структуру.
+   - Note: You may want to update `pip` as suggested in the logs (`pip install --upgrade pip`) in your local environment before generating `requirements.txt`.
 
-2. **QR-коды**:
-   - Если вы хотите интегрировать QR-коды в интерфейс, добавьте в фронтенд отображение QR-кода из эндпоинта `/api/shifts/<shift_id>/qr-code`. Например, добавьте кнопку "Показать QR-код" в `shiftDetailsModal`.
+3. **Set Environment Variables**:
+   - In the Render dashboard, go to your service's "Environment" settings and set:
+     - `DATABASE_URL`: The PostgreSQL URL provided by Render (e.g., `postgres://user:password@host:port/dbname`).
+     - `JWT_SECRET_KEY`: A secure key (generate with `openssl rand -hex 32`).
+     - `PORT`: 5000 (optional, Render sets this automatically).
+   - Example:
+     ```
+     DATABASE_URL=postgresql://user:password@host:port/dbname
+     JWT_SECRET_KEY=your-secure-key-here
+     ```
 
-3. **Тестирование**:
-   - Протестируйте эндпоинты с помощью Postman или cURL, особенно `/api/swaps`, `/api/availabilities` и `/api/today-shifts`.
-   - Проверьте работу PWA в Chrome DevTools (вкладка Application).
+4. **Static Files**:
+   - Ensure the following files are in the `static` directory:
+     - `index.html`
+     - `sw.js`
+     - `manifest.json`
+     - `icons/icon-192x192.png`
+     - `icons/icon-512x512.png`
+   - Your `manifest.json` should look like this (adjust paths if necessary):
+     ```json
+     {
+       "name": "LOT Schedule",
+       "short_name": "Schedule",
+       "start_url": "/",
+       "display": "standalone",
+       "background_color": "#ffffff",
+       "theme_color": "#000000",
+       "icons": [
+         {
+           "src": "/static/icons/icon-192x192.png",
+           "sizes": "192x192",
+           "type": "image/png"
+         },
+         {
+           "src": "/static/icons/icon-512x512.png",
+           "sizes": "512x512",
+           "type": "image/png"
+         }
+       ]
+     }
+     ```
 
-4. **Безопасность**:
-   - Убедитесь, что `JWT_SECRET_KEY` безопасен и не хранится в репозитории.
-   - Для продакшена настройте HTTPS на Render (обычно автоматически включено).
+5. **Update Render Build Command**:
+   - In the Render dashboard, ensure the build command is:
+     ```
+     pip install -r requirements.txt
+     ```
+   - Ensure the start command is:
+     ```
+     gunicorn --chdir /opt/render/project/src/ server:app
+     ```
+   - If you rename the file to `app.py`, update the start command to:
+     ```
+     gunicorn --chdir /opt/render/project/src/ app:app
+     ```
 
-5. **Логирование**:
-   - Используйте логи Render для отладки. Если нужно больше функциональности, рассмотрите интеграцию с внешним сервисом логирования (например, Loggly).
+6. **Push Changes to GitHub**:
+   - Commit the updated `server.py` and `requirements.txt` to your repository:
+     ```bash
+     git add server.py requirements.txt
+     git commit -m "Fix syntax error and update for Flask-SQLAlchemy"
+     git push origin main
+     ```
+   - Render will automatically detect the changes and redeploy.
 
----
+7. **Check Logs**:
+   - After redeploying, monitor the logs in the Render dashboard to ensure the application starts successfully.
+   - Look for the message: `Successfully connected to the database and ensured tables exist`.
 
-### Тестирование фронтенда и бэкенда
+8. **Test the Application**:
+   - Access your application at `https://lot-schedule-api.onrender.com/`.
+   - Test API endpoints using Postman or cURL, e.g.:
+     ```bash
+     curl -X POST https://lot-schedule-api.onrender.com/api/register \
+     -H "Content-Type: application/json" \
+     -d '{"email":"test@example.com","password":"password123","full_name":"Test User"}'
+     ```
+   - Verify that `/sw.js` and `/static/manifest.json` are accessible:
+     ```bash
+     curl https://lot-schedule-api.onrender.com/sw.js
+     curl https://lot-schedule-api.onrender.com/static/manifest.json
+     ```
 
-1. **Локальное тестирование**:
-   - Запустите бэкенд локально: `python app.py`.
-   - Убедитесь, что фронтенд обращается к `http://localhost:5000/api` (измените `API_BASE_URL` в `index.html` на `http://localhost:5000`).
-   - Проверьте авторизацию, загрузку расписания, создание запросов на обмен и обновление доступности.
+### Additional Notes
 
-2. **Тестирование на Render**:
-   - После деплоя проверьте, что все эндпоинты доступны по `https://<your-render-url>/api`.
-   - Убедитесь, что PWA работает (появляется предложение установить приложение).
+1. **PDF Parsing**:
+   - The `parse_pdf_with_colors` function assumes a specific PDF structure (first column for dates, other columns for user names and shift codes). If your PDF has a different format, share a sample structure, and I can help refine the parser.
 
----
+2. **PWA Functionality**:
+   - The logs show successful requests for `/sw.js` and `/favicon.ico`, indicating that the static file serving is working. Ensure your `sw.js` is correctly implemented to cache necessary resources for offline functionality.
 
-Если у вас есть дополнительные вопросы или нужна помощь с конкретной частью (например, настройка PDF-парсера под ваш формат или интеграция QR-кодов), напишите, и я помогу! Также, если вы хотите добавить новые функции (например, push-уведомления через FCM), дайте знать.
+3. **Database Initialization**:
+   - The `db.create_all()` call ensures tables are created on startup. If you need to run migrations or seed initial data, consider using a tool like `Flask-Migrate`.
+
+4. **Python 3.13.4**:
+   - Python 3.13.4 is relatively new. All dependencies in your `requirements.txt` are compatible, but if you encounter issues, consider switching to Python 3.11 or 3.12 in Render settings for better stability.
+
+5. **QR Code Endpoint**:
+   - If you plan to use the QR code functionality, reintegrate the `/api/shifts/<int:shift_id>/qr-code` endpoint and update the frontend to display QR codes (e.g., in the shift details modal).
+
+6. **Security**:
+   - Ensure `JWT_SECRET_KEY` is secure and not exposed in the repository.
+   - Use HTTPS (Render provides this by default).
+
+### Troubleshooting
+
+If the deployment fails again:
+- **Check Logs**: Look for specific error messages in the Render logs.
+- **Verify File Structure**: Ensure `static/sw.js`, `static/manifest.json`, and `static/icons/` exist.
+- **Test Locally**: Run the application locally to confirm it works:
+  ```bash
+  pip install -r requirements.txt
+  python server.py
+  ```
+- **Database Connection**: If you get database errors, verify the `DATABASE_URL` format and connectivity to your PostgreSQL instance.
+
+If you need further assistance, share the updated logs or specify any particular functionality (e.g., PDF parsing, QR codes) you want to focus on, and I'll provide targeted help!
