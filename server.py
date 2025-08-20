@@ -969,25 +969,15 @@ def unauthorized_callback(callback):
 def invalid_token_callback(callback):
     return jsonify({'error': 'Invalid token'}), 401
 
-
-# Добавьте это перед запуском приложения
-with app.app_context():
-    db.drop_all()
-    db.create_all()
-    logger.info("Все таблицы пересозданы")
-
 # =========================
 # ЗАПУСК ПРИЛОЖЕНИЯ
 # =========================
 if __name__ == '__main__':
-    # Проверяем и создаем таблицы при запуске
     check_and_create_tables()
-    
-    # Выполняем миграцию базы данных
     migrate_database()
-    
     logger.info("База данных проверена и мигрирована")
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)), debug=False)
+
 
 
 
