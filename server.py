@@ -1017,47 +1017,65 @@ def send_emergency_notification():
 
 def parse_pdf_with_colors(pdf_bytes):
     shifts = []
+    
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page_num, page in enumerate(pdf.pages):
             tables = page.extract_tables({
-                "vertical_strategy": "lines",
+                "vertical_strategy": "lines", 
                 "horizontal_strategy": "lines",
                 "explicit_vertical_lines": page.curves + page.edges,
                 "explicit_horizontal_lines": page.curves + page.edges,
             })
             
             rects = page.rects + page.curves
-            current_date = None
             
             for table in tables:
-                for row_idx, row in enumerate(table):
-                    for col_idx, cell in enumerate(row):
-                        if cell and isinstance(cell, str) and cell.strip():
-                            if col_idx == 0 and '-' in cell:
-                                try:
-                                    current_date = datetime.strptime(cell.strip(), '%Y-%m-%d').date()
-                                    continue
-                                except ValueError:
-                                    pass
+                if not table:
+                    continue
+                
+                # Предполагаем, что первая строка - заголовки с датами
+                header = table[0]
+                dates = []
+                for h in header[1:]:  # Пропускаем первую колонку (имя)
+                    if h and ',' in h:
+                        day_str = h.split(',')[0].strip()
+                        try:
+                            day = int(day_str)
+                            dates.append(datetime.datetime(2025, 8, day).strftime('%Y-%m-%d'))
+                        except ValueError:
+                            continue
+                
+                # Обработка строк сотрудников
+                for row in table[1:]:
+                    if not row or not row[0] or row[0] in ['BRAKI', 'PLAN', 'Nazwisko i imię']:
+                        continue
+                    
+                    name = row[0].strip()
+                    if name.isdigit() or not name:
+                        continue
+                    
+                    shift_values = row[1:1 + len(dates)]  # Шизы смен
+                    for j, value in enumerate(shift_values):
+                        value = value.strip()
+                        if value and value not in ['x', 'X']:
+                            is_coordinator = 'B' in value
+                            hours = 4.0 if is_coordinator else 8.0
                             
-                            if cell.lower() in ['date', 'data', 'name', 'nazwisko']:
-                                continue
-                            
-                            cell_bbox = (
-                                col_idx * 100,
-                                row_idx * 20,
-                                (col_idx + 1) * 100,
-                                (row_idx + 1) * 20
-                            )
-                            
-                            is_coordinator = False
+                            # Определение цвета ячейки
                             color_hex = None
+                            # Вычислить bbox ячейки (примерно, на основе индекса)
+                            cell_bbox = (
+                                (j + 1) * 100,  # Смещение по колонкам
+                                len(shifts) * 20,  # Смещение по строкам (примерно)
+                                (j + 2) * 100,
+                                (len(shifts) + 1) * 20
+                            )
                             
                             for rect in rects:
                                 if (rect['x0'] >= cell_bbox[0] and rect['x1'] <= cell_bbox[2] and
                                     rect['y0'] >= cell_bbox[1] and rect['y1'] <= cell_bbox[3]):
                                     if rect.get('fill'):
-                                        is_coordinator = True
+                                        is_coordinator = True  # Если цвет, то координатор
                                         if isinstance(rect['fill'], tuple):
                                             color_hex = '#{:02x}{:02x}{:02x}'.format(
                                                 int(rect['fill'][0] * 255),
@@ -1066,18 +1084,13 @@ def parse_pdf_with_colors(pdf_bytes):
                                             )
                                         break
                             
-                            parts = cell.strip().split('\n')
-                            user_name = parts[0] if parts else cell.strip()
-                            shift_code = parts[1] if len(parts) > 1 else cell.strip()
-                            
                             shifts.append({
-                                'user_name': user_name,
-                                'text': shift_code,
-                                'date': current_date.isoformat() if current_date else None,
-                                'hours': 8.0,
+                                'user_name': name,
+                                'date': dates[j],
+                                'text': value,
+                                'hours': hours,
                                 'is_coordinator': is_coordinator,
-                                'color_hex': color_hex,
-                                'page': page_num + 1
+                                'color_hex': color_hex
                             })
     
     return shifts
@@ -1115,3 +1128,4 @@ if __name__ == '__main__':
         db.create_all()
     logger.info("Successfully connected to the database and ensured tables exist")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
