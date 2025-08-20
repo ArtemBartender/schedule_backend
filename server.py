@@ -14,6 +14,7 @@ import pdfplumber
 import qrcode
 from io import BytesIO
 import base64
+import sqlalchemy as sa
 
 # =========================
 # НАСТРОЙКА ПРИЛОЖЕНИЯ
@@ -56,13 +57,6 @@ class User(db.Model):
     password_hash = db.Column(db.String, nullable=False)
     full_name = db.Column(db.String, unique=True, nullable=False)
     role = db.Column(db.String, default='user', nullable=False)
-    # phone = db.Column(db.String, nullable=True)
-    #language = db.Column(db.String, default='pl')
-    #theme = db.Column(db.String, default='light')
-    #font_size = db.Column(db.String, default='medium')
-    #quiet_hours_start = db.Column(db.Integer, default=22)
-    #quiet_hours_end = db.Column(db.Integer, default=8)
-    #fcm_token = db.Column(db.String, nullable=True)
 
     shifts = db.relationship('Shift', back_populates='user', cascade="all, delete-orphan")
     outgoing_swaps = db.relationship('SwapRequest', foreign_keys='SwapRequest.from_user_id', 
@@ -90,9 +84,6 @@ class Shift(db.Model):
     hours = db.Column(db.Float, nullable=False)
     is_coordinator = db.Column(db.Boolean, default=False, nullable=False)
     color_hex = db.Column(db.String, nullable=True)
-    #actual_start = db.Column(db.DateTime, nullable=True)
-    #actual_end = db.Column(db.DateTime, nullable=True)
-    #qr_code = db.Column(db.String, nullable=True)
 
     user = db.relationship('User', back_populates='shifts')
 
@@ -105,28 +96,11 @@ class Shift(db.Model):
             "hours": self.hours,
             "is_coordinator": bool(self.is_coordinator),
             "color_hex": self.color_hex,
-            #"actual_start": self.actual_start.isoformat() if self.actual_start else None,
-            #"actual_end": self.actual_end.isoformat() if self.actual_end else None,
             "user": {
                 "id": self.user.id,
                 "full_name": self.user.full_name
             } if self.user else None
         }
-
-    def generate_qr_code(self):
-        qr_data = {
-            "shift_id": self.id,
-            "user_id": self.user_id,
-            "date": self.shift_date.isoformat()
-        }
-        qr = qrcode.QRCode(version=1, box_size=10, border=5)
-        qr.add_data(str(qr_data))
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
-        self.qr_code = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        return self.qr_code
 
 class SwapRequest(db.Model):
     __tablename__ = 'swap_requests'
@@ -208,6 +182,81 @@ def admin_required():
     return wrapper
 
 # =========================
+# ФУНКЦИИ МИГРАЦИИ БАЗЫ ДАННЫХ
+# =========================
+def check_and_create_tables():
+    """Проверяет и создает отсутствующие таблицы"""
+    with app.app_context():
+        inspector = sa.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        # Список всех таблиц, которые должны быть
+        required_tables = [
+            'users', 'shifts', 'swap_requests', 'availabilities',
+            'shift_notes', 'time_off_requests', 'notifications'
+        ]
+        
+        # Создаем отсутствующие таблицы
+        for table in required_tables:
+            if table not in existing_tables:
+                logger.info(f"Создание таблицы: {table}")
+        
+        # Создаем все таблицы
+        db.create_all()
+        logger.info("Все таблицы проверены и созданы при необходимости")
+
+def migrate_database():
+    """Миграция базы данных - добавляет отсутствующие столбцы"""
+    with app.app_context():
+        inspector = sa.inspect(db.engine)
+        
+        # Проверяем и добавляем столбцы для таблицы users
+        if 'users' in inspector.get_table_names():
+            existing_columns = [col['name'] for col in inspector.get_columns('users')]
+            columns_to_add = []
+            
+            if 'phone' not in existing_columns:
+                columns_to_add.append('ALTER TABLE users ADD COLUMN phone VARCHAR')
+            if 'language' not in existing_columns:
+                columns_to_add.append('ALTER TABLE users ADD COLUMN language VARCHAR DEFAULT \'pl\'')
+            if 'theme' not in existing_columns:
+                columns_to_add.append('ALTER TABLE users ADD COLUMN theme VARCHAR DEFAULT \'light\'')
+            if 'font_size' not in existing_columns:
+                columns_to_add.append('ALTER TABLE users ADD COLUMN font_size VARCHAR DEFAULT \'medium\'')
+            if 'quiet_hours_start' not in existing_columns:
+                columns_to_add.append('ALTER TABLE users ADD COLUMN quiet_hours_start INTEGER DEFAULT 22')
+            if 'quiet_hours_end' not in existing_columns:
+                columns_to_add.append('ALTER TABLE users ADD COLUMN quiet_hours_end INTEGER DEFAULT 8')
+            if 'fcm_token' not in existing_columns:
+                columns_to_add.append('ALTER TABLE users ADD COLUMN fcm_token VARCHAR')
+                
+            for sql in columns_to_add:
+                try:
+                    db.engine.execute(sql)
+                    logger.info(f"Добавлен столбец: {sql}")
+                except Exception as e:
+                    logger.error(f"Ошибка при добавлении столбца: {e}")
+
+        # Проверяем и добавляем столбцы для таблицы shifts
+        if 'shifts' in inspector.get_table_names():
+            existing_columns = [col['name'] for col in inspector.get_columns('shifts')]
+            columns_to_add = []
+            
+            if 'actual_start' not in existing_columns:
+                columns_to_add.append('ALTER TABLE shifts ADD COLUMN actual_start TIMESTAMP')
+            if 'actual_end' not in existing_columns:
+                columns_to_add.append('ALTER TABLE shifts ADD COLUMN actual_end TIMESTAMP')
+            if 'qr_code' not in existing_columns:
+                columns_to_add.append('ALTER TABLE shifts ADD COLUMN qr_code VARCHAR')
+                
+            for sql in columns_to_add:
+                try:
+                    db.engine.execute(sql)
+                    logger.info(f"Добавлен столбец: {sql}")
+                except Exception as e:
+                    logger.error(f"Ошибка при добавлении столбца: {e}")
+
+# =========================
 # ЭНДПОИНТЫ
 # =========================
 
@@ -228,7 +277,6 @@ def register():
             email=data['email'],
             full_name=data['full_name'],
             role=data.get('role', 'user'),
-            # phone=data.get('phone')
         )
         user.set_password(data['password'])
         
@@ -249,7 +297,6 @@ def register():
                 'email': user.email,
                 'full_name': user.full_name,
                 'role': user.role,
-                # 'phone': user.phone
             }
         }), 201
     
@@ -285,7 +332,6 @@ def login():
                 'email': user.email,
                 'full_name': user.full_name,
                 'role': user.role,
-                # 'phone': user.phone
             }
         })
     
@@ -296,8 +342,6 @@ def login():
 @app.route('/static/icons/<path:filename>')
 def serve_icons(filename):
     return send_from_directory('static/icons', filename)
-
-
 
 @app.route('/api/schedule/upload', methods=['POST'])
 @jwt_required()
@@ -317,6 +361,7 @@ def upload_schedule():
         pdf_bytes = file.read()
         shifts_data = parse_pdf_with_colors(pdf_bytes)
         
+        # Очищаем только смены, не затрагивая пользователей
         db.session.query(Shift).delete()
         
         for shift_data in shifts_data:
@@ -404,7 +449,6 @@ def get_my_schedule():
         logger.error(f"Get my schedule error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
 
-
 @app.route('/api/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
@@ -416,13 +460,6 @@ def get_current_user():
             'email': user.email,
             'full_name': user.full_name,
             'role': user.role,
-            # 'phone': user.phone,
-            #'language': user.language,
-            #'theme': user.theme,
-            #'font_size': user.font_size,
-            #'quiet_hours_start': user.quiet_hours_start,
-            #'quiet_hours_end': user.quiet_hours_end,
-            #'fcm_token': user.fcm_token
         })
     
     except Exception as e:
@@ -444,6 +481,7 @@ def get_users():
     except Exception as e:
         logger.error(f"Get users error: {str(e)}\n{traceback.format_exc()}")
         return jsonify({'error': 'An error occurred'}), 500
+
 
 @app.route('/api/availabilities', methods=['GET', 'POST'])
 @jwt_required()
@@ -932,10 +970,15 @@ with app.app_context():
 # ЗАПУСК ПРИЛОЖЕНИЯ
 # =========================
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    logger.info("Successfully connected to the database and ensured tables exist")
+    # Проверяем и создаем таблицы при запуске
+    check_and_create_tables()
+    
+    # Выполняем миграцию базы данных
+    migrate_database()
+    
+    logger.info("База данных проверена и мигрирована")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
 
 
 
