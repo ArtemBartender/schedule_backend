@@ -6,6 +6,9 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn server:app --workers 2 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
     envVars:
+      - key: DB_FORCE_NULLPOOL
+        value: "1"
+    envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: grafik-db

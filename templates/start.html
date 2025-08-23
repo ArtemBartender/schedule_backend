@@ -33,18 +33,27 @@
     <div id="next-shift-box" class="muted">Ładowanie…</div>
     <div style="margin-top:10px;display:flex;gap:8px;">
       <button id="open-day" class="btn-secondary" disabled>Zobacz w kalendarzu</button>
+      <button id="btn-reload-next" class="btn-secondary">Odśwież</button>
     </div>
   </section>
 
   <section class="card" style="padding:14px;margin-top:12px;">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
       <h2 style="margin:0;font-size:1.1rem;">Notatki dnia</h2>
-      <div id="add-note-wrap" hidden style="display:flex;gap:8px;align-items:center;">
-        <input id="note-input" placeholder="Dodaj notatkę…" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);" />
+      <div id="add-note-wrap" hidden style="display:flex;gap:8px;align-items:center;min-width:40%;">
+        <input id="note-input" placeholder="Dodaj notatkę…" class="input" style="flex:1;" />
         <button id="note-add" class="btn-secondary">Dodaj</button>
       </div>
     </div>
-    <div id="notes-list" style="margin-top:10px;"></div>
+
+    <!-- выбор даты -->
+    <div class="row" style="gap:8px;align-items:center;margin:10px 0 6px;">
+      <label class="muted" for="notes-date">Data:</label>
+      <input type="date" id="notes-date" class="input" style="max-width:220px;" />
+      <button id="btn-reload-notes" class="btn-secondary">Odśwież</button>
+    </div>
+
+    <div id="notes-list" style="margin-top:8px;"></div>
   </section>
 </main>
 

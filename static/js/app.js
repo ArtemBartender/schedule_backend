@@ -473,3 +473,66 @@ if ('serviceWorker' in navigator){
 }
 window.addEventListener('online',  ()=> toast.info('Połączono z siecią'));
 window.addEventListener('offline', ()=> toast.error('Jesteś offline'));
+
+// --- KEEP-ALIVE + API RETRY (append-only) ---
+(function () {
+  if (window.__api_init) return; window.__api_init = true;
+
+  // Универсальная обёртка над fetch с 1 повтором при 500/503
+  window.api = async function(url, opts={}) {
+    const headers = Object.assign({}, opts.headers || {});
+    try { if (typeof getToken === 'function' && !headers.Authorization) headers.Authorization = 'Bearer ' + getToken(); } catch(_){}
+    const run = async () => {
+      const res = await fetch(url, {...opts, headers, cache:'no-store'});
+      const jsonish = (res.headers.get('content-type')||'').includes('application/json');
+      const body = jsonish ? await res.json().catch(()=>({})) : await res.text().catch(()=> '');
+      if (!res.ok) {
+        const msg = body?.error || (`Błąd ${res.status}`);
+        const err = new Error(msg); err.status = res.status; throw err;
+      }
+      return body;
+    };
+    try { return await run(); }
+    catch (e) {
+      if (e.status === 500 || e.status === 503) {  // база/сервис только проснулся
+        await new Promise(r=>setTimeout(r, 800));
+        return await run();
+      }
+      throw e;
+    }
+  };
+
+// --- KEEP-ALIVE + API RETRY ---
+(function () {
+  if (window.__api_init) return; window.__api_init = true;
+
+  window.api = async function(url, opts={}){
+    const headers = Object.assign({}, opts.headers || {});
+    try { if (typeof getToken === 'function' && !headers.Authorization) headers.Authorization = 'Bearer ' + getToken(); } catch(_){}
+    const run = async () => {
+      const res = await fetch(url, {...opts, headers, cache:'no-store'});
+      const ct = (res.headers.get('content-type')||'');
+      const body = ct.includes('application/json') ? await res.json().catch(()=>({})) : await res.text().catch(()=> '');
+      if (!res.ok) { const err = new Error(body?.error || `Błąd ${res.status}`); err.status = res.status; throw err; }
+      return body;
+    };
+    try { return await run(); }
+    catch (e) {
+      if (e.status === 500 || e.status === 503) { await new Promise(r=>setTimeout(r, 800)); return await run(); }
+      throw e;
+    }
+  };
+
+  const ping = () => fetch('/api/health', {cache:'no-store'}).catch(()=>{});
+  let timer = null;
+  function startKA(){
+    clearInterval(timer);
+    ping();
+    timer = setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine) ping();
+    }, 4*60*1000);
+  }
+  window.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible') startKA(); });
+  window.addEventListener('focus', startKA);
+  startKA();
+})();
