@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grafik Zmian — Admin</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="page-admin">
+  <header class="topbar">
+    <div class="brand">Grafik Zmian</div>
+    <div class="spacer"></div>
+    <button id="menu-toggle" class="icon-btn" aria-label="Menu" aria-expanded="false" aria-controls="menu-panel">☰</button>
+    <nav id="menu-panel" class="menu-panel" hidden>
+      <a href="/start" class="menu-item">Start</a>
+      <a href="/dashboard" class="menu-item">Kalendarz</a>
+      <a href="/stats" class="menu-item">Statystyka</a>
+      <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
+      <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
+      <hr class="menu-sep">
+      <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Wgraj PDF z grafikiem</h2>
+      <form id="upload-form" class="mt-12">
+        <input type="file" name="file" accept="application/pdf" required />
+        <button type="submit">Wyślij</button>
+        <p id="upload-msg" class="form-msg"></p>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Import z tekstu</h2>
+      <form id="paste-form" class="mt-12">
+        <textarea name="text" rows="8" placeholder="Wklej linie z grafikiem tutaj" required style="width:100%;"></textarea>
+        <button type="submit">Importuj</button>
+        <p id="paste-msg" class="form-msg"></p>
+      </form>
+      <p class="muted small">Uwaga: przed importem wszystkie obecne zmiany zostaną wyczyszczone.</p>
+    </section>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+  <script src="/static/js/admin.js"></script>
+</body>
+</html>

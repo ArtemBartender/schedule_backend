@@ -1,0 +1,249 @@
+/* ================== Motyw / zmienne ================== */
+:root{
+  --bg:#0b0d10;
+  --text:#eaf0f6;
+  --muted:#8b97a7;
+
+  --card:#11151a;
+  --card2:#0d1116;   /* brakowało – używane w inputach/modalach */
+  --panel:#0f141a;   /* brakowało – używane w sekcjach/menu */
+
+  --border:#1a2027;
+  --accent:#6aa9ff;
+  --accent2:#7bffb5;
+  --danger:#ff6a6a;
+}
+
+*{ box-sizing:border-box }
+html,body{ height:100% }
+body{
+  margin:0;
+  font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+
+/* ================== Formularze / przyciski ================== */
+label{ display:block; font-size:14px; margin:10px 0 }
+input[type=email],
+input[type=password],
+input[type=text],
+input[type=number],
+input[type=time],
+textarea{
+  width:100%;
+  padding:12px 14px;
+  border-radius:12px;
+  border:1px solid var(--border);
+  background:var(--card2);
+  color:var(--text);
+}
+button{
+  display:inline-flex; align-items:center; gap:8px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none; color:#001018; font-weight:700;
+  padding:10px 14px; border-radius:12px; cursor:pointer;
+}
+button:focus-visible,
+.icon-btn:focus-visible,
+.menu-item:focus-visible,
+.btn-secondary:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.btn-secondary{
+  background:transparent; border:1px solid var(--border); color:var(--text);
+}
+.small{ font-size:12px }
+.muted{ color:var(--muted) }
+.hidden{ display:none }
+.mt-12{ margin-top:12px }
+
+/* ================== Auth ================== */
+.page-auth{ display:grid; place-items:center; padding:24px }
+.auth-card{
+  width:100%; max-width:420px;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:16px; padding:28px;
+  box-shadow:0 10px 30px rgba(0,0,0,.35);
+}
+.app-title{ margin:0 0 12px; font-weight:800; letter-spacing:.2px }
+.form-msg{ min-height:20px; font-size:13px; margin-top:8px; color:var(--muted) }
+
+/* ================== Layout bazowy ================== */
+.topbar{
+  position:sticky; top:0; z-index:50;
+  display:flex; align-items:center; gap:12px;
+  background:rgba(11,13,16,.7);
+  backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border);
+  padding:10px 16px;
+}
+.brand{ font-weight:800 }
+.spacer{ flex:1 }
+.container{ max-width:1200px; margin:18px auto; padding:0 16px; display:grid; gap:16px }
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:16px; padding:16px;
+}
+
+/* ================== Kalendarz (siatka) ================== */
+.calendar-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px }
+#month-title{ margin:0 }
+.calendar-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px }
+.cell{ border:1px solid var(--border); border-radius:12px; min-height:110px; padding:6px }
+.cell.weekday{ min-height:auto; text-align:center; background:#0e1319; font-weight:700 }
+.cell.day.empty{ background:#0d1116; opacity:.6 }
+.day-head{ font-weight:800; margin-bottom:4px; color:var(--muted) }
+.shift-list{ display:flex; flex-direction:column; gap:4px }
+.shift-item{ padding:6px; border:1px dashed var(--border); border-radius:10px; background:#0e1319 }
+.badge-me{
+  display:inline-block; font-size:11px; padding:2px 6px; border-radius:8px;
+  background:#0f1720; border:1px solid var(--border); color:var(--muted); margin-right:6px;
+}
+
+/* Mobile – kalendarz w 2 kolumnach, bez tygodni */
+@media (max-width:720px){
+  .calendar-grid{ grid-template-columns:repeat(2,1fr) }
+  .cell.weekday{ display:none }
+}
+
+/* ================== Modal (uniwersalny) ================== */
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.55);
+  display:flex; align-items:center; justify-content:center; z-index:1000;
+}
+.modal{
+  width:min(900px,95vw); max-height:85vh; overflow:auto;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:16px; padding:12px 12px 16px;
+}
+.modal-head{ display:flex; align-items:center; justify-content:space-between; padding:6px 8px 10px }
+.modal-title{ font-weight:800 }
+.modal-close{ border:none; background:transparent; color:var(--text); font-size:22px; cursor:pointer }
+.modal-body.two-cols{ display:grid; grid-template-columns:1fr 1fr; gap:16px }
+@media (max-width:720px){ .modal-body.two-cols{ grid-template-columns:1fr } }
+
+/* ================== Kolumny list w modalu ================== */
+.cols-2{ display:grid; grid-template-columns:1fr 1fr; gap:14px }
+.col{ border:1px solid var(--border); border-radius:12px; background:var(--panel) }
+.col-title{ font-weight:800; color:var(--muted); padding:10px 12px; border-bottom:1px solid var(--border) }
+.col-list{ padding:8px 0 }
+
+/* ================== Wiersze osób (modal dnia) ================== */
+.person-row{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:8px 12px; border-bottom:1px dashed var(--border);
+}
+.person-row:last-child{ border-bottom:none }
+.person-row .name{ font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60% }
+.person-row .code{ color:var(--muted); font-weight:700 }
+
+/* Akcent ról – zgodnie z klasami dodawanymi w JS */
+.person-row .name.coordinator{ color:#60a5fa; font-weight:600 }
+.person-row .name.zmiwaka{ color:#facc15; font-weight:600 }
+
+/* Przycisk „Zaproponuj zamianę” */
+.person-row .swap-btn{
+  margin-left:8px; padding:4px 8px; font-size:.85rem;
+  border-radius:8px; border:1px solid #334155; background:#0b1220; color:#cbd5e1; cursor:pointer;
+}
+.person-row .swap-btn:hover{ background:#111a2a }
+
+/* ================== Legenda (opcjonalna) ================== */
+.legend-item{
+  display:inline-flex; align-items:center; gap:8px;
+  font-size:12px; color:var(--muted); margin-right:10px;
+}
+.legend-item::before{ content:""; width:10px; height:10px; border-radius:2px; display:inline-block }
+.legend-item.coord::before{ background: var(--accent2) }
+.legend-item.zmiwaka::before{ background: var(--accent) }
+
+/* ================== Propozycje zamian ================== */
+.swap-row{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; padding:10px 0; border-bottom:1px dashed rgba(148,163,184,.18);
+}
+.swap-who{ min-width:220px; font-weight:700; color:#e5e7eb }
+.swap-who .me{ color:#a5b4fc }
+.swap-dates{ display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+.swap-dates .arrow{ opacity:.7 }
+.tag{ padding:4px 8px; border-radius:8px; background:#0b1220; border:1px solid #334155 }
+.tag-small{ font-size:.8rem; color:#cbd5e1 }
+.tag-date{ font-weight:800; color:#f1f5f9 }
+.swap-actions{ display:flex; align-items:center; gap:8px }
+.status-badge{ padding:2px 8px; border-radius:999px; font-size:.78rem; font-weight:700; border:1px solid transparent }
+.status-pending{  background:rgba(234,179,8,.15);  color:#fde047; border-color:rgba(234,179,8,.35) }
+.status-accepted{ background:rgba(34,197,94,.15);  color:#86efac; border-color:rgba(34,197,94,.35) }
+.status-declined{ background:rgba(239,68,68,.15);  color:#fca5a5; border-color:rgba(239,68,68,.35) }
+.status-canceled{ background:rgba(148,163,184,.12); color:#cbd5e1; border-color:rgba(148,163,184,.25) }
+.swap-btn{ padding:6px 10px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e5e7eb; cursor:pointer }
+.swap-btn:hover{ background:#111a2a }
+
+/* ================== Toasty ================== */
+.toast-stack{
+  position:fixed; right:16px; top:16px; z-index:9999;
+  display:flex; flex-direction:column; gap:8px;
+}
+.toast{
+  padding:10px 14px; border-radius:10px; border:1px solid var(--border);
+  background:var(--card2); color:var(--text); box-shadow:0 6px 20px rgba(0,0,0,.25);
+  font-weight:600; min-width:240px;
+}
+.toast.success{ border-color:rgba(34,197,94,.35) }
+.toast.error{   border-color:rgba(239,68,68,.35) }
+.toast.info{    border-color:rgba(96,165,250,.35) }
+
+/* ================== Menu (hamburger) ================== */
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:40px; height:36px; border-radius:10px;
+  background:#1f2937; color:#e5e7eb; border:1px solid #374151; cursor:pointer;
+}
+.menu-panel{
+  position:absolute; right:12px; top:52px;
+  background:var(--panel); color:var(--text);
+  border:1px solid var(--border); border-radius:12px; padding:8px; z-index:2000;
+  min-width:200px; box-shadow:0 12px 30px rgba(0,0,0,.35);
+}
+.menu-panel[hidden]{ display:none !important }
+.menu-item{
+  display:block; width:100%; text-align:left;
+  background:transparent; color:var(--text); border:0; cursor:pointer;
+  padding:10px 12px; border-radius:8px; text-decoration:none; font-weight:600;
+}
+.menu-item:hover{ background:rgba(148,163,184,.12) }
+.menu-sep{ border:0; border-top:1px solid var(--border); margin:6px 0 }
+
+/* ================== Statystyka ================== */
+.stats-grid{
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px; margin:12px 0;
+}
+@media (max-width:640px){ .stats-grid{ grid-template-columns:1fr } }
+.kpi{ background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:12px }
+.kpi-title{ color:var(--muted); font-size:.9rem; margin-bottom:4px }
+.kpi-value{ font-weight:800; font-size:1.4rem }
+.bars{ display:flex; align-items:flex-end; gap:6px; height:140px; margin-top:8px }
+.bar{ width:10px; border-radius:6px 6px 0 0; background:#334155; position:relative }
+.bar.done{ background:#60a5fa }
+.bar:hover::after{
+  content:attr(data-tip);
+  position:absolute; bottom:100%; left:50%; transform:translateX(-50%);
+  background:var(--card2); border:1px solid var(--border); padding:4px 6px; border-radius:6px;
+  white-space:nowrap; font-size:.75rem;
+}
+.settings-inline{ display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-top:8px }
+.settings-inline input{
+  width:140px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+  background:var(--card2); color:var(--text); font-weight:600;
+}
+
+/* ================== Wybór daty do zamiany (mini-siatka) ================== */
+.pick-overlay .month-head{ display:flex; align-items:center; gap:10px; margin-bottom:10px }
+.pick-overlay .grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px }
+.pick-overlay .cell{
+  background:#0f172a; border:1px solid #1f2a44; border-radius:10px;
+  padding:8px; text-align:center; cursor:pointer;
+}
+.pick-overlay .cell.disabled{ opacity:.35; cursor:not-allowed }
+.pick-overlay .cell.mine{ outline:1px solid rgba(96,165,250,.4) }

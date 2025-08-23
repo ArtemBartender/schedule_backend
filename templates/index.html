@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grafik Zmian</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="page-auth">
+  <div class="auth-card">
+    <h1 class="app-title">Grafik Zmian</h1>
+
+    <div id="login-view">
+      <h2>Logowanie</h2>
+      <form id="login-form">
+        <label>Email
+          <input type="email" name="email" required autocomplete="username" />
+        </label>
+        <label>Hasło
+          <input type="password" name="password" required autocomplete="current-password" />
+        </label>
+        <button type="submit">Zaloguj</button>
+        <p class="form-msg" id="login-msg"></p>
+      </form>
+      <p class="muted">
+        Nie masz konta? <a href="#" id="to-register">Zarejestruj się</a>
+      </p>
+    </div>
+
+    <div id="register-view" class="hidden">
+      <h2>Rejestracja</h2>
+      <form id="register-form">
+        <label>Imię i nazwisko
+          <input type="text" name="full_name" required />
+        </label>
+        <label>Email
+          <input type="email" name="email" required autocomplete="email" />
+        </label>
+        <label>Hasło
+          <input type="password" name="password" required minlength="4" autocomplete="new-password" />
+        </label>
+        <button type="submit">Utwórz konto</button>
+        <p class="form-msg" id="register-msg"></p>
+      </form>
+      <p class="muted">
+        Masz już konto? <a href="#" id="to-login">Zaloguj się</a>
+      </p>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

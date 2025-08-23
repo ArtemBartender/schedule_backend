@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grafik Zmian</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="page-dashboard">
+  <header class="topbar">
+    <div class="brand">Grafik Zmian</div>
+    <div class="spacer"></div>
+    <button id="menu-toggle" class="icon-btn" aria-label="Menu" aria-expanded="false" aria-controls="menu-panel">☰</button>
+    <nav id="menu-panel" class="menu-panel" hidden>
+      <a href="/start" class="menu-item">Start</a>
+      <a href="/dashboard" class="menu-item">Kalendarz</a>
+      <a href="/stats" class="menu-item">Statystyka</a>
+      <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
+      <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
+      <hr class="menu-sep">
+      <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <div class="calendar-head">
+        <button id="prev-month" class="btn-secondary">◀</button>
+        <h2 id="month-title"></h2>
+        <button id="next-month" class="btn-secondary">▶</button>
+      </div>
+      <div id="calendar" class="calendar-grid"></div>
+    </section>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

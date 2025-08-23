@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Start — Grafik Zmian</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="color-scheme" content="light dark" />
+</head>
+<body class="page-start">
+<header class="topbar">
+  <div class="brand">Grafik Zmian</div>
+  <div class="spacer"></div>
+  <button id="menu-toggle" class="icon-btn" aria-label="Menu" aria-controls="menu-panel">☰</button>
+  <nav id="menu-panel" class="menu-panel" hidden>
+    <a href="/start" class="menu-item">Start</a>
+    <a href="/dashboard" class="menu-item">Kalendarz</a>
+    <a href="/stats" class="menu-item">Statystyka</a>
+    <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
+    <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
+    <hr class="menu-sep" />
+    <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
+  </nav>
+</header>
+
+<main class="container">
+  <div class="page-head">
+    <h1>Następna zmiana</h1>
+  </div>
+
+  <section class="card" style="padding:14px;">
+    <div id="next-shift-box" class="muted">Ładowanie…</div>
+    <div style="margin-top:10px;display:flex;gap:8px;">
+      <button id="open-day" class="btn-secondary" disabled>Zobacz w kalendarzu</button>
+    </div>
+  </section>
+
+  <section class="card" style="padding:14px;margin-top:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+      <h2 style="margin:0;font-size:1.1rem;">Notatki dnia</h2>
+      <div id="add-note-wrap" hidden style="display:flex;gap:8px;align-items:center;">
+        <input id="note-input" placeholder="Dodaj notatkę…" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);" />
+        <button id="note-add" class="btn-secondary">Dodaj</button>
+      </div>
+    </div>
+    <div id="notes-list" style="margin-top:10px;"></div>
+  </section>
+</main>
+
+<script src="/static/js/app.js"></script>
+<script src="/static/js/start.js"></script>
+</body>
+</html>

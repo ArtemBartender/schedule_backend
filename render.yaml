@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: grafik-zmian
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn server:app --workers 2 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: grafik-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DB_POOL_RECYCLE
+        value: "300"
+      - key: DB_POOL_SIZE
+        value: "2"
+      - key: DB_MAX_OVERFLOW
+        value: "0"
+
+databases:
+  - name: grafik-db
+    plan: free
+    databaseName: grafik
+    user: grafik_user

@@ -1,63 +1,38 @@
-const CACHE_NAME = 'grafik-smiian-v1';
-const urlsToCache = [
-    '/',
-    '/index.html',
-    '/static/manifest.json',
-    '/static/icons/icon-192x192.png', // Убедись, что файлы есть
-    '/static/icons/icon-512x512.png'
+// v1 — shell + runtime cache
+const CORE = [
+  '/', '/dashboard',
+  '/static/css/style.css',
+  '/static/js/app.js'
 ];
-
-self.addEventListener('install', event => {
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(urlsToCache))
-            .catch(error => {
-                console.error('Cache install failed:', error);
-                // Игнорируем ошибки, если иконки отсутствуют
-            })
-    );
+self.addEventListener('install', e=>{
+  e.waitUntil(caches.open('core-v1').then(c=>c.addAll(CORE)));
+  self.skipWaiting();
+});
+self.addEventListener('activate', e=>{
+  e.waitUntil(
+    caches.keys().then(keys=>Promise.all(
+      keys.filter(k=>!['core-v1','rt-v1'].includes(k)).map(k=>caches.delete(k))
+    ))
+  );
+  self.clients.claim();
 });
 
-self.addEventListener('fetch', event => {
-    event.respondWith(
-        caches.match(event.request)
-            .then(cachedResponse => {
-                // Кэшируем только GET-запросы к статическим файлам
-                if (event.request.method === 'GET' && !event.request.url.includes('/api/')) {
-                    return cachedResponse || fetch(event.request)
-                        .then(response => {
-                            return caches.open(CACHE_NAME)
-                                .then(cache => {
-                                    cache.put(event.request, response.clone());
-                                    return response;
-                                });
-                        });
-                }
-                // Для API используем сеть с запасным кэшем
-                return fetch(event.request)
-                    .then(networkResponse => {
-                        return caches.open(CACHE_NAME)
-                            .then(cache => {
-                                cache.put(event.request, networkResponse.clone());
-                                return networkResponse;
-                            });
-                    })
-                    .catch(() => caches.match(event.request)); // Возвращаем кэш при ошибке сети
-            })
+self.addEventListener('fetch', e=>{
+  const {request} = e;
+  const url = new URL(request.url);
+  // runtime cache для статики и GET API
+  if (request.method==='GET' && (url.pathname.startsWith('/static/') || url.pathname.startsWith('/api/'))){
+    e.respondWith(
+      caches.open('rt-v1').then(async cache=>{
+        try{
+          const net = await fetch(request);
+          if (net.ok) cache.put(request, net.clone());
+          return net;
+        }catch{
+          const cached = await cache.match(request);
+          return cached || new Response(JSON.stringify({offline:true}), {status:503, headers:{'content-type':'application/json'}});
+        }
+      })
     );
-});
-
-self.addEventListener('activate', event => {
-    const cacheWhitelist = [CACHE_NAME];
-    event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
-                cacheNames.map(cacheName => {
-                    if (!cacheWhitelist.includes(cacheName)) {
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        })
-    );
+  }
 });

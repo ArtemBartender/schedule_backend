@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Propozycje — Grafik Zmian</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="page-proposals">
+<header class="topbar">
+  <div class="brand">Grafik Zmian</div>
+  <div class="spacer"></div>
+  <button id="menu-toggle" class="icon-btn" aria-label="Menu" aria-controls="menu-panel">☰</button>
+  <nav id="menu-panel" class="menu-panel" hidden>
+    <a href="/start" class="menu-item">Start</a>
+    <a href="/dashboard" class="menu-item">Kalendarz</a>
+    <a href="/stats" class="menu-item">Statystyka</a>
+    <a href="/proposals" class="menu-item">Propozycje</a>
+    <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
+    <hr class="menu-sep" />
+    <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
+  </nav>
+</header>
+
+<main class="container">
+  <section class="card">
+    <h2 style="margin-top:0;">Propozycje</h2>
+    <div class="muted" style="margin-bottom:8px;">
+      <b>Legenda:</b> <span class="tag-small">Oddajesz</span> → <span class="tag-small">Dostajesz</span>.
+      Najpierw akceptuje osoba, do której wysłano propozycję, a następnie zatwierdza przełożony (Robert / Michał).
+    </div>
+
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 12px;">
+      <button class="btn-secondary" data-tab="incoming">Odebrane</button>
+      <button class="btn-secondary" data-tab="outgoing">Wysłane</button>
+      <button class="btn-secondary" data-tab="manager" id="mgr-tab" hidden>Do zatwierdzenia</button>
+    </div>
+
+    <div id="list" class="col-list"></div>
+  </section>
+</main>
+
+<script src="/static/js/app.js"></script>
+<script src="/static/js/proposals.js"></script>
+</body>
+</html>
