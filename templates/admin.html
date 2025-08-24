@@ -2,44 +2,79 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Grafik Zmian — Admin</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin — Grafik Zmian</title>
   <link rel="stylesheet" href="/static/css/style.css" />
+  <meta name="color-scheme" content="light dark" />
+  <script>
+    // ранняя проверка, чтобы не было петель/мигания
+    function _rawToken(){ try{ if (window.getToken) return window.getToken(); }catch(_){} return localStorage.getItem('access_token') || sessionStorage.getItem('access_token'); }
+    function _parseJwt(t){
+      try{
+        const b64 = t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+        const json = atob(b64);
+        const s = decodeURIComponent(json.split('').map(c => '%' + ('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+        return JSON.parse(s);
+      }catch(_){ return null; }
+    }
+    (function guard(){
+      const tok = _rawToken();
+      if (!tok){ location.replace('/'); return; }
+      const role = String((_parseJwt(tok)?.role)||'').toLowerCase();
+      if (role !== 'admin'){ location.replace('/dashboard'); return; }
+    })();
+  </script>
 </head>
 <body class="page-admin">
   <header class="topbar">
     <div class="brand">Grafik Zmian</div>
     <div class="spacer"></div>
-    <button id="menu-toggle" class="icon-btn" aria-label="Menu" aria-expanded="false" aria-controls="menu-panel">☰</button>
+    <button id="menu-toggle" class="icon-btn" aria-label="Menu" aria-controls="menu-panel" aria-expanded="false">☰</button>
     <nav id="menu-panel" class="menu-panel" hidden>
       <a href="/start" class="menu-item">Start</a>
       <a href="/dashboard" class="menu-item">Kalendarz</a>
       <a href="/stats" class="menu-item">Statystyka</a>
       <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
+      <a href="/market" class="menu-item">Rynek</a>
       <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
-      <hr class="menu-sep">
+      <hr class="menu-sep" />
       <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
     </nav>
   </header>
 
   <main class="container">
-    <section class="card">
-      <h2>Wgraj PDF z grafikiem</h2>
-      <form id="upload-form" class="mt-12">
-        <input type="file" name="file" accept="application/pdf" required />
-        <button type="submit">Wyślij</button>
-        <p id="upload-msg" class="form-msg"></p>
+    <section class="card" style="padding:12px">
+      <h2>Import zmian (PDF)</h2>
+      <form id="upload-form" class="settings-inline" enctype="multipart/form-data">
+        <label>PDF z grafikiem<br>
+          <input type="file" name="file" accept="application/pdf" required />
+        </label>
+        <button class="btn-secondary" type="submit">Wyślij</button>
+        <div id="upload-msg" class="muted" style="margin-left:auto"></div>
       </form>
     </section>
 
-    <section class="card">
+    <section class="card" style="padding:12px;margin-top:12px;">
       <h2>Import z tekstu</h2>
-      <form id="paste-form" class="mt-12">
-        <textarea name="text" rows="8" placeholder="Wklej linie z grafikiem tutaj" required style="width:100%;"></textarea>
-        <button type="submit">Importuj</button>
-        <p id="paste-msg" class="form-msg"></p>
+      <div class="settings-inline" style="margin-bottom:8px;">
+        <label>Miesiąc<br>
+          <select id="month-select" style="min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
+        </label>
+        <label>Rok<br>
+          <select id="year-select" style="min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
+        </label>
+      </div>
+      <form id="paste-form" class="settings-inline">
+        <label style="width:100%">Wklej tekst<br>
+          <textarea name="text" rows="10" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></textarea>
+        </label>
+        <button class="btn-secondary" type="submit">Zaimportuj</button>
+        <div id="paste-msg" class="muted" style="margin-left:auto"></div>
       </form>
-      <p class="muted small">Uwaga: przed importem wszystkie obecne zmiany zostaną wyczyszczone.</p>
+    </section>
+
+    <section class="card" style="padding:12px;margin-top:12px;">
+      <button id="logout-btn" class="btn-secondary">Wyloguj (admin)</button>
     </section>
   </main>
 

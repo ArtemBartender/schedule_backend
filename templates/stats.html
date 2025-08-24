@@ -12,12 +12,13 @@
   <header class="topbar">
     <div class="brand">Grafik Zmian</div>
     <div class="spacer"></div>
-    <button id="menu-toggle" class="icon-btn" aria-label="Menu" aria-controls="menu-panel">☰</button>
+    <button id="menu-toggle" class="icon-btn" aria-label="Menu" aria-controls="menu-panel" aria-expanded="false">☰</button>
     <nav id="menu-panel" class="menu-panel" hidden>
       <a href="/start" class="menu-item">Start</a>
       <a href="/dashboard" class="menu-item">Kalendarz</a>
       <a href="/stats" class="menu-item">Statystyka</a>
       <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
+      <a href="/market" class="menu-item">Rynek</a>
       <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
       <hr class="menu-sep" />
       <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
@@ -25,14 +26,16 @@
   </header>
 
   <main class="container">
+    <!-- Nawigacja po miesiącach -->
     <div class="page-head">
-      <div class="month-nav">
-        <button id="stats-prev" class="btn-secondary">◀</button>
-        <h1 id="stats-title">Miesiąc</h1>
-        <button id="stats-next" class="btn-secondary">▶</button>
+      <div class="month-nav" style="display:flex;align-items:center;gap:10px;justify-content:center;">
+        <button id="stats-prev" class="btn-secondary" aria-label="Poprzedni miesiąc">◀</button>
+        <h1 id="stats-title" style="margin:0;">Miesiąc</h1>
+        <button id="stats-next" class="btn-secondary" aria-label="Następny miesiąc">▶</button>
       </div>
     </div>
 
+    <!-- KPI -->
     <section class="stats-grid">
       <div class="kpi">
         <div class="kpi-title">Przepracowano</div>
@@ -52,28 +55,41 @@
       </div>
     </section>
 
+    <!-- Słupki godzin -->
     <section class="card" style="padding:12px">
       <div class="kpi-title">Godziny wg dni</div>
       <div id="stats-bars"></div>
     </section>
 
+    <!-- Ustawienia stawek/podatku -->
     <section class="card" style="padding:12px;margin-top:12px;">
       <div class="kpi-title">Ustawienia</div>
-      <div class="settings-inline">
-        <label>Stawka (PLN/h)<br><input type="number" step="0.01" id="rate-input" placeholder="np. 28.00"></label>
-        <label>Podatek (%)<br><input type="number" step="0.01" id="tax-input" placeholder="np. 12"></label>
+
+      <div class="stats-settings-row">
+        <div class="field">
+          <label for="rate-input">Stawka (PLN/h)</label>
+          <input type="number" step="0.01" id="rate-input" placeholder="np. 28.00">
+        </div>
+
+        <div class="field">
+          <label for="tax-input">Podatek (%)</label>
+          <input type="number" step="0.01" id="tax-input" placeholder="np. 12">
+        </div>
+
         <button id="save-settings" class="btn-secondary">Zapisz</button>
       </div>
     </section>
 
+
+    <!-- Nadgodziny + notatki -->
     <section class="card" style="padding:12px;margin-top:12px;">
       <div class="kpi-title" style="margin-bottom:8px;">Nadgodziny i notatki</div>
-      <div class="settings-inline" style="align-items:center;">
-        <label style="min-width:240px;">
-          Wybierz zmianę<br>
-          <select id="ot-shift-select" style="width:240px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-weight:600;"></select>
+      <div class="settings-inline" style="align-items:center;display:flex;gap:12px;flex-wrap:wrap;">
+        <label style="min-width:240px;display:flex;flex-direction:column;gap:6px;">
+          <span>Wybierz zmianę</span>
+          <select id="ot-shift-select" style="width:240px;height:40px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-weight:600;"></select>
         </label>
-        <button id="ot-edit-btn" class="btn-secondary">Edytuj</button>
+        <button id="ot-edit-btn" class="btn-secondary" style="height:40px;padding:0 16px;">Edytuj</button>
         <div id="ot-summary" class="muted" style="margin-left:auto;"></div>
       </div>
       <div id="notes-summary" class="muted" style="margin-top:10px;"></div>

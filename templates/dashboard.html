@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Grafik Zmian</title>
+  <title>Kalendarz — Grafik Zmian</title>
   <link rel="stylesheet" href="/static/css/style.css" />
+  <meta name="color-scheme" content="light dark" />
 </head>
 <body class="page-dashboard">
   <header class="topbar">
@@ -16,6 +17,7 @@
       <a href="/dashboard" class="menu-item">Kalendarz</a>
       <a href="/stats" class="menu-item">Statystyka</a>
       <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
+      <a href="/market" class="menu-item">Rynek</a>
       <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
       <hr class="menu-sep">
       <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
@@ -23,16 +25,31 @@
   </header>
 
   <main class="container">
-    <section class="card">
-      <div class="calendar-head">
-        <button id="prev-month" class="btn-secondary">◀</button>
-        <h2 id="month-title"></h2>
-        <button id="next-month" class="btn-secondary">▶</button>
+    <section class="card" style="padding:14px;">
+
+      <!-- Панель управления календарём -->
+      <div class="cal-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div class="month-nav" style="display:flex;align-items:center;gap:8px;">
+          <button id="prev-month" class="btn-secondary" aria-label="Poprzedni miesiąc">◀</button>
+          <h2 id="month-title" style="margin:0;text-align:center;"></h2>
+          <button id="next-month" class="btn-secondary" aria-label="Następny miesiąc">▶</button>
+        </div>
+        <div class="cal-tools" style="display:flex;gap:8px;">
+          <button id="jump-today" class="btn-secondary" aria-label="Przejdź do dziś">Dziś</button>
+          <button id="toggle-past" class="btn-secondary" aria-pressed="false">Pokaż przeszłe zmiany</button>
+        </div>
       </div>
-      <div id="calendar" class="calendar-grid"></div>
+
+      <div class="muted" style="margin:8px 0 12px;">
+        Dotknij dzień, a następnie osobę — pojawią się akcje <strong>„Zaproponuj wymianę”</strong> i <strong>„Weź tę zmianę”</strong>.
+      </div>
+
+      <!-- ЛЕСЕНКА: сюда JS рендерит по строке на каждый dzień месяца (начиная od dziś) -->
+      <div id="days-list" style="display:flex;flex-direction:column;gap:10px;"></div>
     </section>
   </main>
 
   <script src="/static/js/app.js"></script>
+  <script src="/static/js/dashboard.js?v=20250824b"></script>
 </body>
 </html>

@@ -3,22 +3,35 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Grafik Zmian</title>
+  <title>Grafik Zmian — Logowanie</title>
   <link rel="stylesheet" href="/static/css/style.css" />
+  <meta name="color-scheme" content="light dark" />
 </head>
 <body class="page-auth">
   <div class="auth-card">
     <h1 class="app-title">Grafik Zmian</h1>
 
+    <!-- LOGIN -->
     <div id="login-view">
       <h2>Logowanie</h2>
-      <form id="login-form">
+      <form id="login-form" autocomplete="on">
         <label>Email
           <input type="email" name="email" required autocomplete="username" />
         </label>
+
         <label>Hasło
-          <input type="password" name="password" required autocomplete="current-password" />
+          <span class="pass-wrap">
+            <input id="login-pass" type="password" name="password" required autocomplete="current-password" />
+            <button type="button" class="toggle-pass" aria-label="Pokaż/ukryj hasło">👁</button>
+          </span>
+          <span id="login-caps" class="muted small" hidden>Włączony Caps Lock</span>
         </label>
+
+        <div class="row between center" style="margin:6px 0 10px;">
+          <label class="small muted"><input id="remember-me" type="checkbox" /> Zapamiętaj mnie</label>
+          <a class="small muted" href="#" id="forgot-link" title="Wkrótce">Nie pamiętasz hasła?</a>
+        </div>
+
         <button type="submit">Zaloguj</button>
         <p class="form-msg" id="login-msg"></p>
       </form>
@@ -27,18 +40,29 @@
       </p>
     </div>
 
+    <!-- REGISTER -->
     <div id="register-view" class="hidden">
       <h2>Rejestracja</h2>
-      <form id="register-form">
+      <form id="register-form" autocomplete="on">
         <label>Imię i nazwisko
           <input type="text" name="full_name" required />
         </label>
+
         <label>Email
           <input type="email" name="email" required autocomplete="email" />
         </label>
+
         <label>Hasło
-          <input type="password" name="password" required minlength="4" autocomplete="new-password" />
+          <span class="pass-wrap">
+            <input id="reg-pass" type="password" name="password" required minlength="4" autocomplete="new-password" />
+            <button type="button" class="toggle-pass" aria-label="Pokaż/ukryj hasło">👁</button>
+          </span>
+          <div class="pwd-meter">
+            <div id="pwd-bar"></div>
+          </div>
+          <div id="pwd-hint" class="small muted">Użyj min. 8 znaków i mieszaj: małe/duże litery, cyfry, symbol.</div>
         </label>
+
         <button type="submit">Utwórz konto</button>
         <p class="form-msg" id="register-msg"></p>
       </form>
@@ -48,6 +72,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=auth1"></script>
 </body>
 </html>

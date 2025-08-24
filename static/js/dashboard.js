@@ -1,164 +1,346 @@
-// Линейный календарь: одна полоса = один день
-
-// Месяцы/дни
-const PL_MONTHS = [
-  "Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec",
-  "Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"
-];
-const PL_WEEKDAYS_SHORT = ["Nd","Pn","Wt","Śr","Cz","Pt","So"];
-
-const state = { y: 0, m: 0, // current year/month
-                byDate: new Map() // "YYYY-MM-DD" -> массив людей со сменами
-              };
-
-function daysInMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-function monthTitle(y,m){ return `${PL_MONTHS[m]} ${y}`; }
-function iso(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
-
-function roleBadges(p){
-  const out = [];
-  if (p.is_coordinator) out.push('<span class="badge badge-coord">koord.</span>');
-  if (p.is_zmiwaka)     out.push('<span class="badge badge-zmiwaka">zmyw.</span>');
-  return out.join('');
-}
-function chip(p){
-  const code = p.shift_code ? `<span class="code">${p.shift_code}</span>` : '';
-  return `<span class="chip"><span class="chip-name">${p.full_name || "—"}</span><span class="chip-right">${roleBadges(p)}${code}</span></span>`;
-}
-function myTag(code){ return `<span class="myshift">Moja zmiana&nbsp;<b>${code || "—"}</b></span>`; }
-
-function buildEmptyMonth(y,m){
-  // заголовок
-  document.getElementById('month-title').textContent = monthTitle(y,m);
-
-  const list = document.getElementById('days-list');
-  list.innerHTML = '';
-
-  const dmax = daysInMonth(y,m);
-  for (let d=1; d<=dmax; d++){
-    const dt = new Date(y,m,d);
-    const wd = dt.getDay(); // 0..6 (Вс..Сб)
-    const row = document.createElement('article');
-    row.className = 'day-row';
-    row.id = `day-${d}`;
-    row.setAttribute('data-date', iso(y,m,d));
-    row.innerHTML = `
-      <div class="day-head">
-        <div class="day-num">${d}</div>
-        <div class="day-weekday">${PL_WEEKDAYS_SHORT[wd]}</div>
-      </div>
-      <div class="day-body">
-        <div class="myshift-wrap" hidden></div>
-        <div class="shift-group">
-          <div class="sg-title">Утро</div>
-          <div class="sg-list"><span class="muted">—</span></div>
-        </div>
-        <div class="shift-group">
-          <div class="sg-title">Вечер</div>
-          <div class="sg-list"><span class="muted">—</span></div>
-        </div>
-      </div>`;
-    list.appendChild(row);
-  }
-}
-
-function fillMonth(y,m){
-  // Вставляем людей/коды в уже построенные пустые дни
-  const claims = (window.currentClaims && window.currentClaims()) || {};
-  const meName = claims.full_name;
-
-  const dmax = daysInMonth(y,m);
-  for (let d=1; d<=dmax; d++){
-    const key = iso(y,m,d);
-    const row = document.getElementById(`day-${d}`);
-    if (!row) continue;
-
-    const items = state.byDate.get(key) || [];
-
-    const morning = items.filter(p => String(p.shift_code||'').toUpperCase().startsWith('1'));
-    const evening = items.filter(p => String(p.shift_code||'').toUpperCase().startsWith('2'));
-    const my = meName ? items.find(p => p.full_name === meName) : null;
-
-    // моя смена
-    const myWrap = row.querySelector('.myshift-wrap');
-    if (my){
-      myWrap.innerHTML = myTag(my.shift_code);
-      myWrap.hidden = false;
-    } else {
-      myWrap.hidden = true;
-      myWrap.innerHTML = '';
-    }
-
-    // утро
-    const mList = row.querySelectorAll('.sg-list')[0];
-    mList.innerHTML = morning.length ? morning.map(chip).join('') : '<span class="muted">—</span>';
-
-    // вечер
-    const eList = row.querySelectorAll('.sg-list')[1];
-    eList.innerHTML = evening.length ? evening.map(chip).join('') : '<span class="muted">—</span>';
-  }
-}
-
-async function loadShiftsAndIndex(){
-  // api() берём из app.js; если его нет — сделаем простую заглушку (без токена)
-  const http = window.api || (async (path,opts={})=>{
-    const res = await fetch(path,opts); const ct=res.headers.get('content-type')||'';
-    return ct.includes('application/json') ? res.json() : res.text();
-  });
-
-  try{
-    const data = await http('/api/shifts'); // массив
-    const by = new Map();
-    for (const s of data){
-      const k = s.shift_date;
-      if (!by.has(k)) by.set(k, []);
-      by.get(k).push(s);
-    }
-    state.byDate = by;
-  }catch(err){
-    // если 401 — app.js уже отвёл на логин; тут просто оставим пустые дни
-    state.byDate = new Map();
-  }
-}
-
-function changeMonth(delta){
-  const d = new Date(state.y, state.m, 1);
-  d.setMonth(d.getMonth() + delta);
-  state.y = d.getFullYear(); state.m = d.getMonth();
-  buildEmptyMonth(state.y, state.m);
-  fillMonth(state.y, state.m);
-}
-
-async function init(){
+// static/js/dashboard.js
+(function initDashboardList() {
+  'use strict';
   if (!document.body.classList.contains('page-dashboard')) return;
 
-  if (typeof isTokenValid === 'function' && !isTokenValid()){
-    // чистим и отправляем на логин
-    if (typeof clearToken === 'function') clearToken();
-    window.location.replace('/');
-    return;
+  // меню
+  if (typeof window.initMenu === 'function') { try { window.initMenu(); } catch (_) {} }
+
+  // ---------- utils ----------
+  const $  = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+  const api = (url, opts) => (typeof window.api === 'function'
+    ? window.api(url, opts || {})
+    : fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{})).then(async r=>{
+        const ct=r.headers.get('content-type')||''; const b=ct.includes('json')?await r.json().catch(()=>({})):await r.text();
+        if(!r.ok){ const e=new Error(b?.error||('HTTP '+r.status)); e.status=r.status; throw e; } return b;
+      }));
+
+  const WD     = new Intl.DateTimeFormat('pl-PL', { weekday: 'short' });
+  const DD     = new Intl.DateTimeFormat('pl-PL', { day: '2-digit' });
+  const MM     = new Intl.DateTimeFormat('pl-PL', { month: '2-digit' });
+  const MTITLE = new Intl.DateTimeFormat('pl-PL', { month: 'long', year: 'numeric' });
+
+  const isoLocal = d => {
+    const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  };
+  const codeGroup = code => String(code||'').trim().startsWith('2') ? '2' : '1';
+
+  // ---------- state ----------
+  const daysRoot   = $('#days-list');
+  const monthTitle = $('#month-title');
+
+  const TODAY = new Date(); TODAY.setHours(12,0,0,0);
+  let baseMonth = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
+  let showPast  = false;
+
+  // мои смены для проверок
+  let MY_MAP = new Map();
+  async function loadMyShifts(){
+    try { const arr = await api('/api/my-shifts', { method:'GET' });
+      MY_MAP = new Map((arr||[]).map(s => [s.shift_date, s]));
+    } catch{ MY_MAP = new Map(); }
+  }
+  const iWorkThatDay = iso => MY_MAP.has(iso);
+
+  // ---------- UI helpers ----------
+  function chip(person, isoDate) {
+    const el = document.createElement('span');
+    el.className = 'chip';
+    el.title = person.full_name || '';
+    el.innerHTML = `
+      <span class="chip-name">${esc(person.full_name || '—')}</span>
+      <span class="chip-right">
+        ${person.is_coordinator ? '<span class="badge badge-coord">koord.</span>' : ''}
+        ${person.is_zmiwaka ? '<span class="badge badge-zmiwaka">zmyw.</span>' : ''}
+        ${person.shift_code ? `<span class="code">${esc(person.shift_code)}</span>` : ''}
+      </span>`;
+    // по клику показываем панель действий внизу дня
+    el.addEventListener('click', (e) => { e.stopPropagation(); showActionsUnderDay(isoDate, person); });
+    return el;
   }
 
-  const now = new Date();
-  state.y = now.getFullYear();
-  state.m = now.getMonth();
+  function colBlock(label, people, isoDate) {
+    const wrap = document.createElement('div');
+    wrap.className = 'day-col';
 
-  // 1) Рисуем пустой месяц (чтоб не было чёрного экрана)
-  buildEmptyMonth(state.y, state.m);
+    const head = document.createElement('div');
+    head.className = 'muted small';
+    head.textContent = `${label} • ${people.length}`;
+    wrap.appendChild(head);
 
-  // 2) Грузим смены и наполняем
-  await loadShiftsAndIndex();
-  fillMonth(state.y, state.m);
+    if (!people.length) {
+      const empty = document.createElement('div');
+      empty.className = 'muted';
+      empty.textContent = '—';
+      wrap.appendChild(empty);
+    } else {
+      const list = document.createElement('div');
+      list.className = 'sg-list';
+      people.forEach(p => list.appendChild(chip(p, isoDate)));
+      wrap.appendChild(list);
+    }
+    return wrap;
+  }
 
-  // 3) Навигация
-  document.getElementById('prev-month').addEventListener('click', ()=> changeMonth(-1));
-  document.getElementById('next-month').addEventListener('click', ()=> changeMonth(+1));
-}
+  function dayRow(iso, data, isToday) {
+    const d = new Date(iso + 'T12:00:00');
+    const row = document.createElement('div');
+    row.className = 'day-row card';
+    row.style.padding = '12px';
+    row.dataset.dayRow = iso;
+    if (isToday) row.id = 'today-anchor';
 
-// безопасный запуск и экспорт на случай поздней загрузки
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
-window.__dashboardInit = () => { try { init(); } catch(e){ console.error(e); } };
+    const left = document.createElement('div');
+    left.style.minWidth = '64px';
+    left.style.textAlign = 'left';
+    left.innerHTML = `
+      <div class="muted" style="font-weight:700">${esc(WD.format(d))}</div>
+      <div style="font-size:1.05rem">${DD.format(d)}.${MM.format(d)}</div>`;
+
+    const right = document.createElement('div');
+    right.style.display = 'grid';
+    right.style.gridTemplateColumns = '1fr';
+    right.style.gap = '10px';
+
+    const grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = '1fr';
+    grid.style.gap = '8px';
+    grid.appendChild(colBlock('Rano',   data.morning || [], iso));
+    grid.appendChild(colBlock('Popo',   data.evening || [], iso));
+    right.appendChild(grid);
+
+    const flex = document.createElement('div');
+    flex.style.display = 'grid';
+    flex.style.gridTemplateColumns = '80px 1fr';
+    flex.style.gap = '14px';
+    flex.appendChild(left);
+    flex.appendChild(right);
+
+    row.appendChild(flex);
+
+    // слот для действий — ВСЕГДА внизу карточки дня
+    const actionsSlot = document.createElement('div');
+    actionsSlot.className = 'day-actions-slot';
+    actionsSlot.style.cssText = 'margin-top:8px; display:block; width:100%;';
+    row.appendChild(actionsSlot);
+
+    return row;
+  }
+
+  // панель действий внизу
+  function showActionsUnderDay(iso, person){
+    $$('.day-actions').forEach(a => a.remove()); // только одна панель
+
+    const row = document.querySelector(`[data-day-row="${iso}"]`);
+    if (!row) return;
+
+    let slot = row.querySelector('.day-actions-slot');
+    if (!slot){
+      slot = document.createElement('div');
+      slot.className = 'day-actions-slot';
+      slot.style.cssText = 'margin-top:8px; display:block; width:100%;';
+      row.appendChild(slot);
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'day-actions';
+    wrap.style.cssText = [
+      'display:flex','gap:8px','flex-wrap:wrap','align-items:center',
+      'padding:10px','border:1px dashed var(--border)','border-radius:10px',
+      'margin-top:6px','width:100%','box-sizing:border-box'
+    ].join(';');
+
+    wrap.innerHTML = `<div class="muted">Dla: <b>${esc(person.full_name)}</b> (${esc(person.shift_code||'—')})</div>`;
+
+    const spacer  = document.createElement('span'); spacer.style.flex = '1';
+    const btnSwap = document.createElement('button'); btnSwap.className = 'btn-secondary'; btnSwap.textContent = 'Zaproponuj wymianę';
+    const btnTake = document.createElement('button'); btnTake.className = 'btn-secondary'; btnTake.textContent = 'Weź tę zmianę';
+
+    btnSwap.addEventListener('click', ()=> openPickMyDateModal({ isoTheir: iso, person }));
+
+    btnTake.addEventListener('click', async ()=> {
+      if (iWorkThatDay(iso)){ alert('W tym dniu już masz zmianę.'); return; }
+      try{
+        await api('/api/takeovers', { method:'POST', body: JSON.stringify({ target_user_id: person.user_id, date: iso }) });
+        alert('Prośba wysłana do właściciela zmiany.');
+      }catch(err){ alert(err.message || 'Błąd'); }
+    });
+
+    wrap.appendChild(spacer);
+    wrap.appendChild(btnSwap);
+    wrap.appendChild(btnTake);
+
+    slot.innerHTML = '';
+    slot.appendChild(wrap);
+    wrap.scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+
+  // выбор моей смены для замены (строчный «календарь»)
+  function openPickMyDateModal({ isoTheir, person }){
+    const myList = Array.from(MY_MAP.values()).sort((a,b)=> a.shift_date.localeCompare(b.shift_date));
+
+    const allow = (my) => {
+      // в этот же день — можно, только если группы разные (1↔2)
+      if (my.shift_date === isoTheir){
+        const gMy = codeGroup(my.shift_code), gTheir = codeGroup(person.shift_code);
+        return gMy !== gTheir;
+      }
+      // в другой день — всегда ок
+      return true;
+    };
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-backdrop';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:900px;">
+        <div class="modal-head">
+          <div class="modal-title">Wybierz swoją zmianę do zamiany → ${esc(person.full_name)} (${isoTheir})</div>
+          <button class="modal-close" aria-label="Zamknij">×</button>
+        </div>
+        <div class="modal-body">
+          <div id="my-ladder"></div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const close=()=>overlay.remove();
+    overlay.addEventListener('click', e=>{ if (e.target===overlay || e.target.classList.contains('modal-close')) close(); });
+
+    const cont = overlay.querySelector('#my-ladder');
+    if (!myList.length){
+      cont.innerHTML = '<div class="muted">Brak Twoich zmian do zaproponowania.</div>';
+      return;
+    }
+
+    cont.innerHTML = myList.map(s=>{
+      const ok = allow(s);
+      return `
+        <div class="person-row" style="align-items:center;">
+          <div class="name"><div><b>${s.shift_date}</b> — ${esc(s.shift_code||'')}</div></div>
+          <div class="code">
+            <button class="swap-btn" data-date="${s.shift_date}" ${ok?'':'disabled'}>${ok?'Wybierz':'Niedostępna'}</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    cont.querySelectorAll('button[data-date]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const my_date = btn.getAttribute('data-date');
+        try{
+          await api('/api/proposals', { method:'POST',
+            body: JSON.stringify({ target_user_id: person.user_id, my_date, their_date: isoTheir }) });
+          close(); alert('Propozycja wysłana.'); window.location.href = '/proposals';
+        }catch(err){ alert(err.message || 'Błąd'); }
+      });
+    });
+  }
+
+  // ---------- data ----------
+  async function fetchDay(iso) {
+    try { return await api('/api/day-shifts?date=' + encodeURIComponent(iso)); }
+    catch (e) { return { morning: [], evening: [], _error: e?.message || 'Błąd' }; }
+  }
+
+  // подпись для кнопки "Pokaż/Ukryj przeszłe"
+  function updatePastBtn() {
+    const btn = $('#toggle-past');
+    if (!btn) return;
+    btn.textContent = showPast ? 'Ukryj przeszłe' : 'Pokaż przeszłe zmiany';
+    btn.setAttribute('aria-pressed', String(showPast));
+  }
+
+  // рендер лестницы только в рамках выбранного месяца
+  async function renderMonthLadder() {
+    daysRoot.innerHTML = '';
+
+    const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1, 12, 0, 0, 0);
+    const monthEnd   = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0, 12, 0, 0, 0);
+
+
+    // заголовок месяца
+    const title = MTITLE.format(monthStart);
+    if (monthTitle) monthTitle.textContent = title.charAt(0).toUpperCase() + title.slice(1);
+
+    // стартовая дата
+    let startDate = showPast ? new Date(monthStart)
+                             : new Date(Math.max(monthStart.getTime(), TODAY.getTime()));
+
+    // если месяц уже полностью в прошлом и прошлые скрыты — включим их и покажем весь месяц
+    if (startDate > monthEnd) {
+      showPast = true;
+      updatePastBtn();
+      startDate = new Date(monthStart);
+    }
+
+    // список iso только внутри месяца
+    const isoList = [];
+    for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
+      isoList.push(isoLocal(d));
+    }
+
+    if (!isoList.length){
+      const stub = document.createElement('div');
+      stub.className = 'muted';
+      stub.style.padding = '12px';
+      stub.textContent = 'Brak dni do wyświetlenia w tym miesiącu.';
+      daysRoot.appendChild(stub);
+      return;
+    }
+
+    // параллельная загрузка
+    const CONC = 4;
+    let idx = 0;
+    const results = new Array(isoList.length);
+    async function worker() {
+      while (idx < isoList.length) {
+        const my = idx++;
+        const iso = isoList[my];
+        const data = await fetchDay(iso);
+        results[my] = { iso, data };
+      }
+    }
+    await Promise.all(Array.from({ length: CONC }, worker));
+
+    // рендер
+    results.forEach(({ iso, data }) => {
+      const isToday = iso === isoLocal(TODAY);
+      const row = dayRow(iso, data || {}, isToday);
+      daysRoot.appendChild(row);
+    });
+
+    // автоскролл к сегодняшнему, если он в этом месяце
+    const anchor = document.getElementById('today-anchor');
+    if (anchor) setTimeout(() => anchor.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }
+
+  // ---------- controls ----------
+  $('#prev-month')?.addEventListener('click', () => {
+    baseMonth = new Date(baseMonth.getFullYear(), baseMonth.getMonth() - 1, 1);
+    renderMonthLadder();
+  });
+  $('#next-month')?.addEventListener('click', () => {
+    baseMonth = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 1);
+    renderMonthLadder();
+  });
+  $('#jump-today')?.addEventListener('click', () => {
+    baseMonth = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
+    renderMonthLadder();
+  });
+  $('#toggle-past')?.addEventListener('click', () => {
+    showPast = !showPast;
+    updatePastBtn();
+    renderMonthLadder();
+  });
+
+  // ---------- start ----------
+  (async () => {
+    await loadMyShifts();
+    updatePastBtn();
+    renderMonthLadder();
+  })();
+
+})();

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Rynek — Grafik Zmian</title>
+  <link rel="stylesheet" href="/static/css/style.css"/>
+  <meta name="color-scheme" content="light dark"/>
+</head>
+<body class="page-market">
+  <header class="topbar">
+    <div class="brand">Grafik Zmian</div>
+    <div class="spacer"></div>
+    <button id="menu-toggle" class="icon-btn" aria-label="Menu" aria-controls="menu-panel">☰</button>
+    <nav id="menu-panel" class="menu-panel" hidden>
+      <a href="/start" class="menu-item">Start</a>
+      <a href="/dashboard" class="menu-item">Kalendarz</a>
+      <a href="/stats" class="menu-item">Statystyka</a>
+      <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
+      <a href="/market" class="menu-item">Rynek</a>
+      <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
+      <hr class="menu-sep"/>
+      <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card" style="padding:14px;">
+      <div class="row between center" style="gap:10px;">
+        <h1 style="margin:0;font-size:1.3rem;">Rynek zmian</h1>
+        <div class="row" style="gap:8px;">
+          <button id="m-refresh" class="btn-secondary">Odśwież</button>
+        </div>
+      </div>
+      <p class="muted" style="margin:8px 0 12px;">
+        Tu można oddać swoją zmianę lub wziąć cudzą (jeśli w ten dzień masz wolne).
+      </p>
+
+      <div class="grid-2" style="display:grid;grid-template-columns:1fr;gap:14px;">
+        <section class="card" style="padding:12px;">
+          <h3 style="margin:0 0 8px;">Otwarte</h3>
+          <div id="m-open"><div class="muted">Ładowanie…</div></div>
+        </section>
+
+        <section class="card" style="padding:12px;">
+          <h3 style="margin:0 0 8px;">Moje oferty</h3>
+          <div id="m-mine"><div class="muted">Ładowanie…</div></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+  <script>
+  (function(){
+    // меню
+    if (typeof initMenu === 'function') try{ initMenu(); }catch(_){}
+
+    // wspólny API wrapper
+    async function api(url, opts){
+      if (typeof window.api === 'function') return await window.api(url, opts||{});
+      const res = await fetch(url, Object.assign({cache:'no-store'}, opts||{}));
+      const ct  = (res.headers.get('content-type')||'');
+      const body= ct.includes('application/json') ? await res.json().catch(()=>({})) : await res.text().catch(()=> '');
+      if (!res.ok){ const msg = body?.error || ('Błąd '+res.status); const err = new Error(msg); err.status = res.status; throw err; }
+      return body;
+    }
+
+    const openBox = document.getElementById('m-open');
+    const mineBox = document.getElementById('m-mine');
+
+    function row(o, mine){
+      const d = new Date(o.date+'T12:00:00');
+      const dateStr = d.toLocaleDateString('pl-PL', { day:'2-digit', month:'2-digit' });
+      const owner = o.owner?.full_name || '';
+      const code  = o.code || '—';
+
+      let actions = '';
+      if (!mine && o.status==='open'){
+        actions = `<button class="btn-secondary" data-act="claim" data-id="${o.id}">Weź</button>`;
+      } else if (mine && o.status==='open'){
+        actions = `<button class="btn-secondary" data-act="cancel" data-id="${o.id}">Anuluj</button>`;
+      } else if (mine && o.status==='requested'){
+        actions = `
+          <span class="muted">Kandydat: ${o.candidate?.full_name || ''}</span>
+          <button class="btn-secondary" data-act="approve" data-id="${o.id}">Zatwierdź</button>
+          <button class="btn-secondary" data-act="reject" data-id="${o.id}">Odrzuć</button>`;
+      } else {
+        actions = `<span class="muted">${o.status}</span>`;
+      }
+
+      return `
+        <div class="row between center" style="padding:8px 6px;border-bottom:1px solid var(--border)">
+          <div>
+            <b>${dateStr}</b>
+            <span class="badge">${code}</span>
+            <span class="muted">${owner}</span>
+          </div>
+          <div class="row" style="gap:8px;">${actions}</div>
+        </div>`;
+    }
+
+    async function load(){
+      try{
+        openBox.innerHTML = '<div class="muted">Ładowanie…</div>';
+        mineBox.innerHTML = '<div class="muted">Ładowanie…</div>';
+        const data = await api('/api/market/offers');
+        const open = (data.open || []).map(o => row(o, false)).join('') || '<div class="muted">Brak</div>';
+        const mine = (data.mine || []).map(o => row(o, true)).join('')  || '<div class="muted">Brak</div>';
+        openBox.innerHTML = open;
+        mineBox.innerHTML = mine;
+      }catch(e){
+        openBox.innerHTML = `<div class="muted">${e.message || 'Błąd'}</div>`;
+        mineBox.innerHTML = `<div class="muted">${e.message || 'Błąd'}</div>`;
+      }
+    }
+
+    document.getElementById('m-refresh')?.addEventListener('click', load);
+
+    document.body.addEventListener('click', async (ev)=>{
+      const b = ev.target.closest('button[data-act]'); if (!b) return;
+      const id = b.dataset.id; const act = b.dataset.act;
+      try{
+        if (act==='claim')   await api('/api/market/offers/'+id+'/claim',  {method:'POST'});
+        if (act==='cancel')  await api('/api/market/offers/'+id+'/cancel', {method:'POST'});
+        if (act==='approve') await api('/api/market/offers/'+id+'/approve',{method:'POST'});
+        if (act==='reject')  await api('/api/market/offers/'+id+'/reject', {method:'POST'});
+        await load();
+      }catch(e){ alert(e.message || 'Błąd operacji'); }
+    });
+
+    load();
+  })();
+  </script>
+</body>
+</html>
