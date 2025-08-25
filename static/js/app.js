@@ -56,9 +56,17 @@
       const ct = res.headers.get('content-type') || '';
       const body = ct.includes('application/json') ? await res.json().catch(()=>({})) : await res.text().catch(()=> '');
       if (!res.ok){
+        if (res.status === 401) {
+          // выкидываем юзера на логин, сохраняя куда он хотел
+          try { clearToken(); } catch(_){}
+          const redirect = encodeURIComponent(window.location.pathname + window.location.search);
+          window.location.href = '/?redirect=' + redirect;
+          return; // break
+        }
         const err = new Error(body?.error || `Błąd ${res.status}`);
         err.status = res.status; throw err;
       }
+
       return body;
     };
 
@@ -71,7 +79,13 @@
       throw e;
     }
   }
-  window.api = api; // экспорт
+
+  // отдать наружу то, что нужно другим скриптам
+  window.api = api;
+  window.getToken = getToken;
+  window.setToken = setToken;
+  window.clearToken = clearToken;
+  window.currentClaims = currentClaims;
 
   // keep-alive
   (function keepAlive(){
@@ -237,7 +251,6 @@
         adminLink.hidden = false;
       }
     }
-
 
     function open(){
       panel.hidden = false;
@@ -631,3 +644,41 @@
   window.addEventListener('offline', ()=> toast.error('Jesteś offline'));
 
 })();
+
+// фиксируем CSS-переменную под реальную высоту шапки
+(function setTopbarHeightVar(){
+  const tb = document.querySelector('.topbar');
+  if (!tb) return;
+  const apply = () =>
+    document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px');
+  apply();
+  window.addEventListener('resize', apply);
+})();
+
+
+// ---- Time helpers (Europe/Warsaw) ----
+// (без export; пробрасываем в window ниже)
+function warsawToday() {
+  const s = new Date().toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' });
+  // s типа "25.08.2025, 16:03:21"
+  const [d, m, y] = s.split(',')[0].split('.').map(x => parseInt(x, 10));
+  return new Date(Date.UTC(y, m - 1, d)); // UTC-день
+}
+function warsawTomorrow() {
+  const t = warsawToday();
+  t.setUTCDate(t.getUTCDate() + 1);
+  return t;
+}
+function isoToUTCDate(iso /* 'YYYY-MM-DD' */) {
+  const [Y, M, D] = String(iso || '').split('-').map(Number);
+  return new Date(Date.UTC(Y, M - 1, D));
+}
+function isBeforeTomorrowWarsaw(iso) {
+  // true если iso < завтра по Варшаве
+  return isoToUTCDate(iso) < warsawTomorrow();
+}
+// отдаём глобально для других скриптов
+window.warsawToday = warsawToday;
+window.warsawTomorrow = warsawTomorrow;
+window.isoToUTCDate = isoToUTCDate;
+window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;

@@ -33,22 +33,14 @@
     return new Promise(function(){}); // break chain
   }
 
-  // ЗАМЕНИ ЭТУ ФУНКЦИЮ В proposals.js ЦЕЛИКОМ
+  // Unified API client (JWT), no forced redirects
   function apiCall(url, opts) {
     opts = opts || {};
-
-    // 1) Если в проекте есть общий клиент — используем его (он сам подставит токен/refresh/CSRF)
     if (typeof window.api === 'function') {
-      return window.api(url, opts).catch(function (err) {
-        // Не редиректим — просто пробрасываем ошибку наверх, чтобы видеть её в alert/Network
-        throw err || new Error('Request failed');
-      });
+      return window.api(url, opts).catch(function (err) { throw err || new Error('Request failed'); });
     }
-
-    // 2) Фолбэк без редиректов: отправляем куки и, для не-GET, X-CSRF из cookie
     var headers = Object.assign({}, opts.headers || {});
     var method  = (opts.method || 'GET').toUpperCase();
-
     if (method !== 'GET' && !headers['X-CSRF-TOKEN']) {
       var csrf = (function getCookie(name){
         var items = document.cookie ? document.cookie.split('; ') : [];
@@ -61,7 +53,6 @@
       })('csrf_access_token');
       if (csrf) headers['X-CSRF-TOKEN'] = csrf;
     }
-
     return fetch(url, Object.assign({}, opts, {
       headers: headers,
       credentials: 'include',
@@ -81,6 +72,17 @@
     });
   }
 
+  // ---- Time helpers (Europe/Warsaw) — на будущее для валидации при создании обмена
+  function warsawTodayUTC(){
+    var s = new Date().toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' });
+    var left = s.split(',')[0].trim(); // DD.MM.YYYY
+    var p = left.split('.');
+    var d = parseInt(p[0],10), m = parseInt(p[1],10), y = parseInt(p[2],10);
+    return new Date(Date.UTC(y, m-1, d));
+  }
+  function warsawTomorrowUTC(){ var t=warsawTodayUTC(); t.setUTCDate(t.getUTCDate()+1); return t; }
+  function isoToUTCDate(iso){ var a=String(iso||'').split('-').map(Number); return new Date(Date.UTC(a[0],a[1]-1,a[2])); }
+  function isBeforeTomorrowWarsawISO(iso){ return isoToUTCDate(iso) < warsawTomorrowUTC(); }
 
   // ----- tabs
   tabBtns.forEach(function(btn){
@@ -216,7 +218,7 @@
     return dt.toLocaleDateString('pl-PL', { day:'2-digit', month:'2-digit', year:'numeric' });
   }
 
-  // ===== render row
+  // ===== render row / actions
   function row(sp){
     var from = coerceName(sp.requester) || coerceName(sp.requester_user) || coerceName(sp.requester_name) || coerceName(sp.from) || '—';
     var to   = coerceName(sp.target_user) || coerceName(sp.target) || coerceName(sp.target_name) || coerceName(sp.to) || '—';
@@ -248,7 +250,6 @@
     var activeTabBtn = document.querySelector('button[data-tab].active');
     var activeTab = (activeTabBtn && activeTabBtn.dataset.tab) || 'incoming';
 
-    // Odebrane — accept/decline
     if (activeTab === 'incoming' && status === 'pending') {
       var acc = el('button','pill action accept','Akceptuj');
       var dec = el('button','pill action decline','Odrzuć');
@@ -268,7 +269,6 @@
       right.appendChild(dec);
     }
 
-    // Wysłane — cancel
     if (activeTab === 'outgoing' && status === 'pending') {
       var cancel = el('button','pill action cancel','Anuluj');
       cancel.addEventListener('click', function(){
@@ -280,7 +280,6 @@
       right.appendChild(cancel);
     }
 
-    // Do zatwierdzenia — approve/reject
     if (activeTab === 'manager' && status === 'accepted') {
       var approve = el('button','pill action accept','Zatwierdź');
       var reject  = el('button','pill action decline','Odrzuć');

@@ -18,6 +18,29 @@
         if(!r.ok){ const e=new Error(b?.error||('HTTP '+r.status)); e.status=r.status; throw e; } return b;
       }));
 
+  // ---- Time helpers (Europe/Warsaw) ----
+  function warsawTodayUTC(){
+    // "DD.MM.YYYY, HH:MM:SS" в Europe/Warsaw -> UTC-дата (без времени)
+    const s = new Date().toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' });
+    const left = s.split(',')[0].trim();
+    const parts = left.split('.');
+    const d = parseInt(parts[0],10), m = parseInt(parts[1],10), y = parseInt(parts[2],10);
+    return new Date(Date.UTC(y, m-1, d));
+  }
+  function warsawTomorrowUTC(){
+    const t = warsawTodayUTC();
+    t.setUTCDate(t.getUTCDate() + 1);
+    return t;
+  }
+  function isoToUTCDate(iso /* YYYY-MM-DD */){
+    const [Y,M,D] = String(iso||'').split('-').map(Number);
+    if (!Y || !M || !D) return new Date(NaN);
+    return new Date(Date.UTC(Y, M-1, D));
+  }
+  function isBeforeTomorrowWarsawISO(iso){
+    return isoToUTCDate(iso) < warsawTomorrowUTC();
+  }
+
   const WD     = new Intl.DateTimeFormat('pl-PL', { weekday: 'short' });
   const DD     = new Intl.DateTimeFormat('pl-PL', { day: '2-digit' });
   const MM     = new Intl.DateTimeFormat('pl-PL', { month: '2-digit' });
@@ -64,13 +87,17 @@
     return el;
   }
 
-  function colBlock(label, people, isoDate) {
+  // было: function colBlock(label, people, isoDate) {
+  function colBlock(label, people, isoDate, group) {
     const wrap = document.createElement('div');
-    wrap.className = 'day-col';
+    wrap.className = `day-col shift-group group--${group}`;
 
     const head = document.createElement('div');
-    head.className = 'muted small';
-    head.textContent = `${label} • ${people.length}`;
+    head.className = 'group-head';
+    head.innerHTML = `
+      <span class="group-title">${esc(label)}</span>
+      <span class="group-count">${people.length}</span>
+    `;
     wrap.appendChild(head);
 
     if (!people.length) {
@@ -86,6 +113,7 @@
     }
     return wrap;
   }
+
 
   function dayRow(iso, data, isToday) {
     const d = new Date(iso + 'T12:00:00');
@@ -111,8 +139,9 @@
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = '1fr';
     grid.style.gap = '8px';
-    grid.appendChild(colBlock('Rano',   data.morning || [], iso));
-    grid.appendChild(colBlock('Popo',   data.evening || [], iso));
+    grid.appendChild(colBlock('Rano',   data.morning || [], iso, 'morning'));
+    grid.appendChild(colBlock('Popo',   data.evening || [], iso, 'evening'));
+
     right.appendChild(grid);
 
     const flex = document.createElement('div');
@@ -165,6 +194,11 @@
     btnSwap.addEventListener('click', ()=> openPickMyDateModal({ isoTheir: iso, person }));
 
     btnTake.addEventListener('click', async ()=> {
+      // запрет «взять» сегодня/прошлое
+      if (isBeforeTomorrowWarsawISO(iso)){
+        alert('Tej zmiany nie można wziąć (przeszłość / dzisiaj).');
+        return;
+      }
       if (iWorkThatDay(iso)){ alert('W tym dniu już masz zmianę.'); return; }
       try{
         await api('/api/takeovers', { method:'POST', body: JSON.stringify({ target_user_id: person.user_id, date: iso }) });
@@ -183,7 +217,12 @@
 
   // выбор моей смены для замены (строчный «календарь»)
   function openPickMyDateModal({ isoTheir, person }){
-    const myList = Array.from(MY_MAP.values()).sort((a,b)=> a.shift_date.localeCompare(b.shift_date));
+    // показываем только от завтра (Europe/Warsaw)
+    const tomo = warsawTomorrowUTC();
+    const myList = Array
+      .from(MY_MAP.values())
+      .filter(s => isoToUTCDate(s.shift_date) >= tomo)
+      .sort((a,b)=> a.shift_date.localeCompare(b.shift_date));
 
     const allow = (my) => {
       // в этот же день — можно, только если группы разные (1↔2)
@@ -191,7 +230,7 @@
         const gMy = codeGroup(my.shift_code), gTheir = codeGroup(person.shift_code);
         return gMy !== gTheir;
       }
-      // в другой день — всегда ок
+      // в другой день — ок (мы уже отфильтровали < завтра)
       return true;
     };
 
@@ -213,7 +252,7 @@
 
     const cont = overlay.querySelector('#my-ladder');
     if (!myList.length){
-      cont.innerHTML = '<div class="muted">Brak Twoich zmian do zaproponowania.</div>';
+      cont.innerHTML = '<div class="muted">Brak Twoich zmian od jutra. Nie można proponować wymiany na dziś/wczoraj.</div>';
       return;
     }
 
