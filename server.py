@@ -657,6 +657,44 @@ def day_shifts():
 
     return jsonify({'date': d.isoformat(), 'morning': morning, 'evening': evening})
 
+@app.get('/api/month-shifts')
+@jwt_required()
+def month_shifts():
+    """Возвращает весь месяц пачкой: {"YYYY-MM-DD": {"morning":[...], "evening":[...]}, ...}"""
+    try:
+        y = int(request.args.get('year', '0'))
+        m = int(request.args.get('month', '0'))
+    except ValueError:
+        return jsonify({'error': 'Bad year/month'}), 400
+
+    if y < 2000 or y > 2100 or m < 1 or m > 12:
+        return jsonify({'error': 'Bad year/month'}), 400
+
+    first = _date(y, m, 1)
+    last  = _date(y, m, monthrange(y, m)[1])
+
+    # один запрос с JOIN на пользователей
+    q = (db.session.query(Shift, User)
+         .join(User, User.id == Shift.user_id)
+         .filter(Shift.shift_date >= first, Shift.shift_date <= last)
+         .order_by(Shift.shift_date.asc(), User.order_index.asc(), User.full_name.asc()))
+
+    out = {}
+    for sh, u in q.all():
+        iso = sh.shift_date.isoformat()
+        slot = 'evening' if str(sh.shift_code or '').strip().startswith('2') else 'morning'
+        out.setdefault(iso, {'morning': [], 'evening': []})
+        out[iso][slot].append({
+            'user_id': u.id,
+            'full_name': u.full_name,
+            'shift_code': sh.shift_code,
+            'is_coordinator': (getattr(u, 'role', '') or '').lower() in ('coordinator', 'admin'),
+            'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
+        })
+
+    return jsonify(out)
+
+
 @app.get('/api/shifts')
 @jwt_required()
 def get_all_shifts():
