@@ -298,6 +298,24 @@ def code_group(code: str) -> str:
     if c.startswith('2'): return 'evening'
     return ''
 
+
+# --- Timezone helpers (Europe/Warsaw) ---
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+    _WARSAW_TZ = ZoneInfo("Europe/Warsaw")
+except Exception:
+    _WARSAW_TZ = None
+
+def warsaw_today():
+    if _WARSAW_TZ:
+        return datetime.now(_WARSAW_TZ).date()
+    # fallback (чуть менее точно без TZ): системная дата
+    return _date.today()
+
+def warsaw_tomorrow():
+    return warsaw_today() + timedelta(days=1)
+ 
+
 def _purge_shifts_and_offers_in_range(start_date, end_date):
     """
     Удаляет market_offers и shifts в указанном диапазоне дат.
@@ -647,8 +665,9 @@ def day_shifts():
             'shift_code': s.shift_code,
             'hours': s.hours,
             'order_index': getattr(u, 'order_index', None),
-            'is_coordinator': bool(getattr(u, 'is_coordinator', False) or (full_name in COORD)),
-            'is_zmiwaka':    bool(getattr(u, 'is_zmiwaka', False)    or (full_name in ZMIW)),
+            'is_coordinator': (getattr(u, 'role', '') or '').lower() in ('coordinator'),
+            'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
+
         }
         if is_evening(s.shift_code):
             evening.append(item)
@@ -688,7 +707,7 @@ def month_shifts():
             'user_id': u.id,
             'full_name': u.full_name,
             'shift_code': sh.shift_code,
-            'is_coordinator': (getattr(u, 'role', '') or '').lower() in ('coordinator', 'admin'),
+            'is_coordinator': (getattr(u, 'role', '') or '').lower() in ('coordinator'),
             'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
         })
 
@@ -734,9 +753,10 @@ def get_all_shifts():
         dct = s.to_dict()
         dct.update({
             'order_index': getattr(u, 'order_index', None),
-            'is_coordinator': bool(getattr(u, 'is_coordinator', False) or (full_name in COORD)),
-            'is_zmiwaka':    bool(getattr(u, 'is_zmiwaka', False)    or (full_name in ZMIW)),
+            'is_coordinator': (getattr(u, 'role', '') or '').lower() in ('coordinator'),
+            'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
         })
+
         out.append(dct)
     return jsonify(out)
 
@@ -1064,6 +1084,10 @@ def create_proposal():
             return jsonify({'error': 'Wybrany pracownik nie ma zmiany w tej dacie.'}), 400
 
     # --- Общая валидация для обоих путей
+    tomo = warsaw_tomorrow()
+    if my_date < tomo or their_date < tomo:
+        return jsonify({'error': 'Wymiany są możliwe tylko od jutra i później.'}), 400
+
     # same-day: только разные группы (1↔2)
     if my_date == their_date:
         if code_group(give.shift_code) == code_group(take.shift_code):
@@ -1320,6 +1344,10 @@ def market_offer_claim(oid):
     day = o.shift.shift_date
     if _has_shift(uid, day):
         return jsonify({'error':'Masz już zmianę w tym dniu.'}), 400
+    shift = off.shift
+    if shift and shift.shift_date < warsaw_tomorrow():
+        return jsonify({'error': 'Nie można wziąć zmiany z przeszłości ani z dzisiaj.'}), 400
+
     o.candidate_id = uid
     o.status = 'requested'
     db.session.commit()
