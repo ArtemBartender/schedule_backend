@@ -40,9 +40,10 @@
   // мои смены для проверок
   let MY_MAP = new Map();
   async function loadMyShifts(){
-    try { const arr = await api('/api/my-shifts', { method:'GET' });
+    try {
+      const arr = await api('/api/my-shifts', { method:'GET' });
       MY_MAP = new Map((arr||[]).map(s => [s.shift_date, s]));
-    } catch{ MY_MAP = new Map(); }
+    } catch { MY_MAP = new Map(); }
   }
   const iWorkThatDay = iso => MY_MAP.has(iso);
 
@@ -239,10 +240,22 @@
     });
   }
 
-  // ---------- data ----------
-  async function fetchDay(iso) {
-    try { return await api('/api/day-shifts?date=' + encodeURIComponent(iso)); }
-    catch (e) { return { morning: [], evening: [], _error: e?.message || 'Błąd' }; }
+  // ---------- bulk helpers ----------
+  function monthKey(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
+
+  async function fetchMonthBulk(d){
+    const y = d.getFullYear(), m = d.getMonth()+1;
+    const key = 'monthCache:'+y+'-'+String(m).padStart(2,'0');
+    try{
+      const cached = sessionStorage.getItem(key);
+      if (cached){
+        const { ts, data } = JSON.parse(cached);
+        if (Date.now() - ts < 120*1000) return data; // 120 сек кэш
+      }
+    }catch(_){}
+    const data = await api(`/api/month-shifts?year=${y}&month=${m}`, { method:'GET' });
+    try{ sessionStorage.setItem(key, JSON.stringify({ ts:Date.now(), data })); }catch(_){}
+    return data;
   }
 
   // подпись для кнопки "Pokaż/Ukryj przeszłe"
@@ -253,32 +266,30 @@
     btn.setAttribute('aria-pressed', String(showPast));
   }
 
-  // рендер лестницы только в рамках выбранного месяца
+  // ---------- рендер месяца (bulk) ----------
   async function renderMonthLadder() {
     daysRoot.innerHTML = '';
 
     const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1, 12, 0, 0, 0);
     const monthEnd   = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0, 12, 0, 0, 0);
 
-
     // заголовок месяца
     const title = MTITLE.format(monthStart);
     if (monthTitle) monthTitle.textContent = title.charAt(0).toUpperCase() + title.slice(1);
 
-    // стартовая дата
-    let startDate = showPast ? new Date(monthStart)
-                             : new Date(Math.max(monthStart.getTime(), TODAY.getTime()));
+    // стартовая видимая дата: с сегодняшнего, если прошлые скрыты
+    let startDate = showPast ? new Date(monthStart) : new Date(Math.max(monthStart.getTime(), TODAY.getTime()));
 
-    // если месяц уже полностью в прошлом и прошлые скрыты — включим их и покажем весь месяц
+    // если месяц полностью в прошлом и прошлые скрыты — покажем весь месяц
     if (startDate > monthEnd) {
       showPast = true;
       updatePastBtn();
       startDate = new Date(monthStart);
     }
 
-    // список iso только внутри месяца
+    // список iso ТОЛЬКО внутри месяца (и с учётом скрытия прошлого)
     const isoList = [];
-    for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(startDate); d <= monthEnd; d.setDate(d.getDate() + 1)) {
       isoList.push(isoLocal(d));
     }
 
@@ -291,30 +302,41 @@
       return;
     }
 
-    // параллельная загрузка
-    const CONC = 4;
-    let idx = 0;
-    const results = new Array(isoList.length);
-    async function worker() {
-      while (idx < isoList.length) {
-        const my = idx++;
-        const iso = isoList[my];
-        const data = await fetchDay(iso);
-        results[my] = { iso, data };
+    // быстрый "скелет" (моментально)
+    const frag = document.createDocumentFragment();
+    isoList.forEach(iso => {
+      const row = dayRow(iso, { morning:[], evening:[] }, iso === isoLocal(TODAY));
+      const holder = document.createElement('div');
+      holder.className = 'muted';
+      holder.textContent = 'Ładowanie…';
+      row.appendChild(holder);
+      frag.appendChild(row);
+    });
+    daysRoot.appendChild(frag);
+
+    // загрузка месяца одним запросом (с кешем)
+    const monthData = await fetchMonthBulk(baseMonth);
+
+    // плавная подстановка чанками (без фризов)
+    let i = 0;
+    function step(){
+      const t0 = performance.now();
+      while (i < isoList.length && performance.now() - t0 < 16) {
+        const iso = isoList[i++];
+        const data = monthData[iso] || { morning:[], evening:[] };
+        const oldRow = daysRoot.querySelector(`[data-day-row="${iso}"]`);
+        if (oldRow) {
+          const newRow = dayRow(iso, data, iso === isoLocal(TODAY));
+          oldRow.replaceWith(newRow);
+        }
+      }
+      if (i < isoList.length) requestAnimationFrame(step);
+      else {
+        const anchor = document.getElementById('today-anchor');
+        if (anchor) setTimeout(()=> anchor.scrollIntoView({ behavior:'smooth', block:'start' }), 40);
       }
     }
-    await Promise.all(Array.from({ length: CONC }, worker));
-
-    // рендер
-    results.forEach(({ iso, data }) => {
-      const isToday = iso === isoLocal(TODAY);
-      const row = dayRow(iso, data || {}, isToday);
-      daysRoot.appendChild(row);
-    });
-
-    // автоскролл к сегодняшнему, если он в этом месяце
-    const anchor = document.getElementById('today-anchor');
-    if (anchor) setTimeout(() => anchor.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    requestAnimationFrame(step);
   }
 
   // ---------- controls ----------
