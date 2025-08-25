@@ -718,3 +718,107 @@ button.chip,
 }
 .pill.action.decline:hover  { background: #e96b0c; transform: scale(1.05); }
 .pill.action.decline:active { background: #d75c08; transform: scale(0.95); }
+
+
+
+/* Обертки групп "Rano"/"Popo" */
+.shift-group{
+  position: relative;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--card2);
+}
+
+/* Акцентная полоса и легкий тон по группе */
+.shift-group.group--morning{
+  border-left: 4px solid #4da3ff; /* синий акцент */
+  background: linear-gradient(0deg, rgba(77,163,255,.08), rgba(77,163,255,.03));
+}
+.shift-group.group--evening{
+  border-left: 4px solid #a66bff; /* фиолетовый акцент */
+  background: linear-gradient(0deg, rgba(166,107,255,.08), rgba(166,107,255,.03));
+}
+
+/* Тонкий разделитель перед вечерним блоком, чтобы группы не слипались */
+.shift-group + .shift-group.group--evening{
+  margin-top: 12px;
+}
+.shift-group.group--evening::before{
+  content: "";
+  position: absolute;
+  left: 8px; right: 8px; top: -6px;
+  height: 1px;
+  background: var(--border);
+  opacity: .5;
+}
+
+/* Шапка группы: заголовок + бейдж количества */
+.group-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.group-title{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Иконки ☀/🌙 перед заголовком */
+.group-title::before{ content: "☀"; }
+.group--evening .group-title::before{ content: "🌙"; }
+
+/* Кружок-счётчик */
+.group-count{
+  font-size: .85rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+}
+
+/* немного воздуха между списком чипов и шапкой */
+.shift-group .sg-list{ margin-top: 4px; }
+
+/* прозрачность шапки */
+:root{
+  --topbar-h: 56px;          /* как и раньше */
+  --topbar-alpha: .78;       /* степень прозрачности (0–1) */
+}
+
+/* полупрозрачная шапка + блюр */
+.topbar{
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+
+  /* fallback (если color-mix не поддерживается) */
+  background: rgba(0,0,0,var(--topbar-alpha));
+
+  /* основная версия — смешиваем нашу тему с прозрачностью */
+  background: color-mix(in srgb, var(--bg) calc(100% * (1 - (1 - var(--topbar-alpha)))),
+                               transparent calc(100% * (1 - var(--topbar-alpha))));
+
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  box-shadow: 0 8px 18px rgba(0,0,0,.16);
+}
+
+/* контент отступает от шапки */
+main.container{
+  padding-top: calc(var(--topbar-h) + 12px);
+}
+
+/* чтобы якоря (например, «сегодня») не прятались под шапкой */
+.day-row{ scroll-margin-top: calc(var(--topbar-h) + 12px); }
+
+/* выпадающее меню — чуть более плотное, чтобы читать легко */
+.menu-panel{
+  background: color-mix(in srgb, var(--card) 92%, transparent 8%);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  box-shadow: 0 10px 24px rgba(0,0,0,.25);
+  z-index: 1001;
+}
+
