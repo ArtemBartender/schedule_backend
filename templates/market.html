@@ -56,6 +56,33 @@
     // меню
     if (typeof initMenu === 'function') try{ initMenu(); }catch(_){}
 
+    // ---- Time helpers (Europe/Warsaw) ----
+    function warsawTodayUTC(){
+      // Получаем «сегодня» в зоне Europe/Warsaw и создаём UTC-день (без времени)
+      const s = new Date().toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' });
+      // формат "DD.MM.YYYY, HH:MM:SS" — берём левую часть
+      const left = s.split(',')[0].trim();
+      const parts = left.split('.');
+      const d = parseInt(parts[0],10);
+      const m = parseInt(parts[1],10);
+      const y = parseInt(parts[2],10);
+      return new Date(Date.UTC(y, m-1, d));
+    }
+    function warsawTomorrowUTC(){
+      const t = warsawTodayUTC();
+      t.setUTCDate(t.getUTCDate() + 1);
+      return t;
+    }
+    function isoToUTCDate(iso /* YYYY-MM-DD */){
+      const [Y,M,D] = String(iso||'').split('-').map(Number);
+      if (!Y || !M || !D) return new Date(NaN);
+      return new Date(Date.UTC(Y, M-1, D));
+    }
+    function isBeforeTomorrowWarsawISO(iso){
+      const dt = isoToUTCDate(iso);
+      return dt < warsawTomorrowUTC();
+    }
+
     // wspólny API wrapper
     async function api(url, opts){
       if (typeof window.api === 'function') return await window.api(url, opts||{});
@@ -75,9 +102,15 @@
       const owner = o.owner?.full_name || '';
       const code  = o.code || '—';
 
+      const isPastOrToday = isBeforeTomorrowWarsawISO(o.date);
+
       let actions = '';
       if (!mine && o.status==='open'){
-        actions = `<button class="btn-secondary" data-act="claim" data-id="${o.id}">Weź</button>`;
+        if (isPastOrToday){
+          actions = `<button class="btn-secondary" data-act="claim" data-id="${o.id}" data-date="${o.date}" disabled title="Tę zmianę można było wziąć tylko do wczoraj">Weź</button>`;
+        } else {
+          actions = `<button class="btn-secondary" data-act="claim" data-id="${o.id}" data-date="${o.date}">Weź</button>`;
+        }
       } else if (mine && o.status==='open'){
         actions = `<button class="btn-secondary" data-act="cancel" data-id="${o.id}">Anuluj</button>`;
       } else if (mine && o.status==='requested'){
@@ -120,6 +153,16 @@
     document.body.addEventListener('click', async (ev)=>{
       const b = ev.target.closest('button[data-act]'); if (!b) return;
       const id = b.dataset.id; const act = b.dataset.act;
+
+      // Клиентская защита: «взять» только от завтра (Europe/Warsaw)
+      if (act === 'claim') {
+        const iso = b.dataset.date; // кладём при рендере
+        if (!iso || isBeforeTomorrowWarsawISO(iso)) {
+          alert('Tej zmiany nie można wziąć (przeszłość / dzisiaj).');
+          return;
+        }
+      }
+
       try{
         if (act==='claim')   await api('/api/market/offers/'+id+'/claim',  {method:'POST'});
         if (act==='cancel')  await api('/api/market/offers/'+id+'/cancel', {method:'POST'});

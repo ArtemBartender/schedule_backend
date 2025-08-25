@@ -16,7 +16,7 @@
       <a href="/start" class="menu-item">Start</a>
       <a href="/dashboard" class="menu-item">Kalendarz</a>
       <a href="/stats" class="menu-item">Statystyka</a>
-      <a href="/proposals" class="menu-item">Propozycje</a>
+      <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
       <a href="/market" class="menu-item">Rynek</a>
       <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
       <hr class="menu-sep" />
@@ -42,6 +42,7 @@
         <button class="btn-secondary" data-tab="manager" id="mgr-tab" hidden>Do zatwierdzenia</button>
       </div>
 
+      <!-- Контент вкладок рендерится из static/js/proposals.js -->
       <div id="list" class="col-list"></div>
     </section>
   </main>
