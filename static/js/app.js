@@ -240,6 +240,15 @@
     if (panel.dataset.bound === '1') return;
     panel.dataset.bound = '1';
 
+
+    // Внутри initMenu()
+    const coordLink = document.getElementById('menu-coord-panel');
+    if (coordLink) {
+      const claims = (typeof currentClaims === 'function') ? currentClaims() : {};
+      const isCoord = (claims.role || '').toLowerCase() === 'coordinator';
+      coordLink.hidden = !isCoord;
+    }
+
     const claims = (typeof currentClaims === 'function') ? currentClaims() : {};
     const adminLink = document.getElementById('menu-admin');
     if (adminLink) {
@@ -682,3 +691,13 @@ window.warsawToday = warsawToday;
 window.warsawTomorrow = warsawTomorrow;
 window.isoToUTCDate = isoToUTCDate;
 window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
+
+
+(function startKeepAlive(){
+  const ping = () => fetch('/api/health', { cache: 'no-store' }).catch(()=>{});
+  ping(); // сразу при загрузке
+  setInterval(ping, 240000); // каждые ~4 минуты
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') ping();
+  });
+})();

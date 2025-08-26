@@ -18,6 +18,27 @@
         if(!r.ok){ const e=new Error(b?.error||('HTTP '+r.status)); e.status=r.status; throw e; } return b;
       }));
 
+
+  function chipClassFor(person) {
+    const isCoord = !!person?.is_coordinator;
+    const isZmiwak = !!person?.is_zmiwaka;
+    // fallback: если бек ещё не шлёт is_bar_today — определяем по коду (1/B, 2/B, B)
+    const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
+    const isBar    = person?.is_bar_today ?? looksBar;
+
+    if (isCoord) {
+      const lounge = person?.coord_lounge; // 'mazurek' | 'polonez' | undefined
+      return lounge === 'polonez' ? 'chip-coord chip-coord-polonez'
+           : lounge === 'mazurek' ? 'chip-coord chip-coord-mazurek'
+           : 'chip-coord';
+    }
+    if (isZmiwak) return 'chip-zmiwak';
+    if (isBar)    return 'chip-bar';
+    return ''; // обычный
+  }
+
+
+  
   // ---- Time helpers (Europe/Warsaw) ----
   function warsawTodayUTC(){
     // "DD.MM.YYYY, HH:MM:SS" в Europe/Warsaw -> UTC-дата (без времени)
@@ -73,19 +94,25 @@
   // ---------- UI helpers ----------
   function chip(person, isoDate) {
     const el = document.createElement('span');
-    el.className = 'chip';
-    el.title = person.full_name || '';
+
+    const cls = chipClassFor(person);
+    el.className = `person-chip ${cls}`;
+    el.title = person?.full_name || '';
+
     el.innerHTML = `
-      <span class="chip-name">${esc(person.full_name || '—')}</span>
-      <span class="chip-right">
-        ${person.is_coordinator ? '<span class="badge badge-coord">koord.</span>' : ''}
-        ${person.is_zmiwaka ? '<span class="badge badge-zmiwaka">zmyw.</span>' : ''}
-        ${person.shift_code ? `<span class="code">${esc(person.shift_code)}</span>` : ''}
-      </span>`;
-    // по клику показываем панель действий внизу дня
+      <span class="name">${esc(person?.full_name || '')}</span>
+      ${person?.is_coordinator
+        ? `<span class="badge badge-coord${person?.coord_lounge ? (' lounge-' + person.coord_lounge) : ''}">koord.</span>`
+        : ''}
+      ${person?.is_zmiwaka ? `<span class="badge badge-zmiwak">zmiwak</span>` : ''}
+      ${person?.shift_code ? `<span class="badge badge-shift">${esc(person.shift_code)}</span>` : ''}
+    `;
+
+    // клик — панель действий снизу дня
     el.addEventListener('click', (e) => { e.stopPropagation(); showActionsUnderDay(isoDate, person); });
     return el;
   }
+
 
   // было: function colBlock(label, people, isoDate) {
   function colBlock(label, people, isoDate, group) {
