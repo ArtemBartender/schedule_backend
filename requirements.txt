@@ -9,3 +9,4 @@ pdfplumber>=0.11
 pdfminer.six>=20221105
 Pillow>=10.0
 Werkzeug>=3.0
+openpyxl>=3.1.2
