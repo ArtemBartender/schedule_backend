@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8"/>
+  <title>Панель координатора</title>
+  <link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body class="page-coord-panel">
+<header class="topbar">
+  <div class="brand">Панель координатора</div>
+  <button id="menu-toggle" class="icon-btn" aria-label="Menu">☰</button>
+  <nav id="menu-panel" class="menu-panel" hidden>
+    <a href="/start" class="menu-item">Start</a>
+    <a href="/dashboard" class="menu-item">Kalendarz</a>
+    <a href="/stats" class="menu-item">Statystyka</a>
+    <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
+    <a href="/coord-panel" id="menu-coord-panel" class="menu-item" hidden>Панель координатора</a>
+    <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
+  </nav>
+</header>
+
+<main class="container">
+  <section class="card">
+    <h2>Выбор смены</h2>
+    <div class="settings-inline">
+      <label>Лаунж<br>
+        <select id="lounge-select">
+          <option value="mazurek">Мазурек</option>
+          <option value="polonez">Полонез</option>
+        </select>
+      </label>
+      <label>Смена<br>
+        <select id="shift-select">
+          <option value="morning">Рано (1)</option>
+          <option value="evening">Попо (2)</option>
+        </select>
+      </label>
+      <label>Дата<br>
+        <input type="date" id="date-select">
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>1. Розставление людей по барам</h3>
+    <div id="bars-form"></div>
+  </section>
+
+  <section class="card">
+    <h3>2. Часы работы</h3>
+    <div id="times-form"></div>
+  </section>
+
+  <section class="card">
+    <h3>3-5. Заметки</h3>
+    <label>Уваги к прошлой смене<br><textarea id="notes-past" rows="2"></textarea></label>
+    <label>Чего не хватило<br><textarea id="notes-missing" rows="2"></textarea></label>
+    <label>Отзывы пассажиров<br><textarea id="notes-passengers" rows="2"></textarea></label>
+  </section>
+
+  <button id="save-btn" class="btn-secondary">Сохранить</button>
+</main>
+
+<script src="/static/js/app.js"></script>
+<script src="/static/js/coord-panel.js"></script>
+</body>
+</html>
