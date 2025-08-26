@@ -6,6 +6,7 @@ import io
 import re
 import json
 import unicodedata
+from openpyxl import load_workbook
 from flask import send_file
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
@@ -22,6 +23,7 @@ from flask import Flask, request, jsonify, render_template, send_from_directory,
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt
 from sqlalchemy import and_, text as sqltext
+from sqlalchemy import text
 from sqlalchemy.sql import func
 from sqlalchemy.pool import NullPool
 from sqlalchemy.exc import OperationalError, DisconnectionError
@@ -109,6 +111,9 @@ class Shift(db.Model):
     worked_hours = db.Column(db.Numeric(5, 2), nullable=True)
     work_note = db.Column(db.Text, nullable=True)
 
+    coord_lounge = db.Column(db.String(16))   # 'mazurek' | 'polonez' | None
+
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -118,6 +123,7 @@ class Shift(db.Model):
             'shift_code': self.shift_code,
             'hours': self.hours,
             'worked_hours': float(self.worked_hours) if self.worked_hours is not None else None,
+            'coord_lounge': self.coord_lounge,
         }
 
 
@@ -269,6 +275,13 @@ with app.app_context():
         except Exception as e:
             db.session.rollback()
             app.logger.warning(f"market_offers migration skipped: {e}")
+# ensure column 'coord_lounge' exists on shifts
+def ensure_coord_lounge_column():
+    insp = db.inspect(db.engine)
+    cols = [c['name'] for c in insp.get_columns('shifts')]
+    if 'coord_lounge' not in cols:
+        db.session.execute(text("ALTER TABLE shifts ADD COLUMN coord_lounge VARCHAR(16)"))
+        db.session.commit()
 
 # ---------------------------------
 # Helpers
@@ -337,6 +350,62 @@ def _purge_shifts_and_offers_in_range(start_date, end_date):
     db.session.flush()
 
 
+def _xlsx_iter_colored_office_cells(xlsx_path: str, year: int, month: int):
+    """
+    Генератор: (full_name:str, date:date, coord_lounge:'mazurek'|'polonez'|None)
+    Берём только клетки со значением '1' или '2' и с заливкой.
+    """
+    from datetime import date as _date_cls
+
+    def _to_rgb_tuple(color):
+        if not color: return None
+        rgb = getattr(color, "rgb", None)
+        if not rgb: return None
+        rgb = str(rgb).upper()
+        if len(rgb) == 8:
+            r = int(rgb[2:4], 16); g = int(rgb[4:6], 16); b = int(rgb[6:8], 16)
+            return (r, g, b)
+        if len(rgb) == 6:
+            r = int(rgb[0:2], 16); g = int(rgb[2:4], 16); b = int(rgb[4:6], 16)
+            return (r, g, b)
+        return None
+
+    def _detect_lounge(rgb):
+        if not rgb: return None
+        r, g, b = rgb
+        if r >= 200 and g >= 180 and b <= 140: return "polonez"  # жёлтый
+        if b >= 150 and r <= 140 and g <= 160: return "mazurek"  # синий
+        return None
+
+    wb = load_workbook(xlsx_path, data_only=True)
+    ws = wb.active
+
+    header = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
+    day_cols = []
+    for idx, val in enumerate(header):
+        try:
+            d = int(str(val).strip())
+        except Exception:
+            continue
+        if 1 <= d <= 31:
+            day_cols.append((idx, d))
+    if not day_cols:
+        return
+
+    for row in ws.iter_rows(min_row=2, values_only=False):
+        full_name = (row[0].value or "").strip() if row[0].value else ""
+        if not full_name:
+            continue
+        for idx, day in day_cols:
+            cell = row[idx]
+            val = (str(cell.value).strip() if cell.value is not None else "")
+            if val not in ("1", "2"):
+                continue
+            rgb = _to_rgb_tuple(cell.fill.start_color)
+            lounge = _detect_lounge(rgb)
+            if lounge:
+                yield full_name, _date_cls(year, month, day), lounge
+
 
 @app.teardown_appcontext
 def teardown_db(exception=None):
@@ -401,6 +470,59 @@ def default_times_for_code(code: str):
 
 import re
 
+
+from werkzeug.utils import secure_filename
+
+@app.post('/api/admin/lounge-from-xlsx')
+@jwt_required()
+def lounge_from_xlsx():
+    # только админ
+    me = current_user()  # если у тебя есть util; иначе достань из JWT
+    if not me or (me.role or '').lower() != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    year = int(request.form.get('year', '0') or 0)
+    month = int(request.form.get('month', '0') or 0)
+    f = request.files.get('file')
+    if not f or year < 2000 or year > 2100 or month < 1 or month > 12:
+        return jsonify({'error': 'Bad input'}), 400
+
+    tmp_path = os.path.join(tempfile.gettempdir(), secure_filename(f.filename))
+    f.save(tmp_path)
+
+    # соберём (full_name,date)->lounge из XLSX
+    updates = []
+    for full_name, d, lounge in _xlsx_iter_colored_office_cells(tmp_path, year, month):
+        updates.append((full_name, d, lounge))
+
+    if not updates:
+        return jsonify({'ok': True, 'updated': 0})
+
+    # Применяем к БД: только для координаторов
+    updated = 0
+    for full_name, d, lounge in updates:
+        u = db.session.query(User).filter(User.full_name == full_name).first()
+        if not u:
+            continue
+        if (u.role or '').lower() != 'coordinator':
+            continue
+        sh = (db.session.query(Shift)
+              .filter(Shift.user_id == u.id, Shift.shift_date == d)
+              .first())
+        if not sh:
+            continue
+        sh.coord_lounge = lounge  # 'mazurek'|'polonez'
+        updated += 1
+
+    db.session.commit()
+    try:
+        os.remove(tmp_path)
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'updated': updated})
+
+
+
 def parse_date_fuzzy(token, default_month=None, default_year=None):
     """
     Принимает '01.08', '1,08', '1/08', '2025-08-01', '01-08-2025', '1' (только день).
@@ -463,6 +585,7 @@ def _is_manager(user_or_id) -> bool:
 
 def _shift_of(user_id, d: date):
     return Shift.query.filter(and_(Shift.user_id==user_id, Shift.shift_date==d)).first()
+
 
 # ---------------------------------
 # Auth
@@ -634,9 +757,6 @@ def day_shifts():
         return jsonify({'error': 'Nieprawidłowa data.'}), 400
 
     backend = db.engine.url.get_backend_name()
-    COORD = set(COORDINATORS_DEFAULT)
-    ZMIW  = set(ZMIWAKI_DEFAULT)
-
     base_q = Shift.query.join(User).filter(Shift.shift_date == d)
     if backend.startswith('postgresql'):
         q = base_q.order_by(User.order_index.asc().nulls_last(), User.full_name.asc())
@@ -658,17 +778,22 @@ def day_shifts():
     morning, evening = [], []
     for s in rows:
         u = s.user
-        full_name = u.full_name if u else None
+        role = (getattr(u, 'role', '') or '').lower()
+        code = (s.shift_code or '').upper()
+        coord_lounge = getattr(s, 'coord_lounge', None)  # ← защита
+
         item = {
             'user_id': u.id if u else None,
-            'full_name': full_name,
+            'full_name': (u.full_name if u else None),
             'shift_code': s.shift_code,
             'hours': s.hours,
             'order_index': getattr(u, 'order_index', None),
-            'is_coordinator': (getattr(u, 'role', '') or '').lower() in ('coordinator'),
+            'is_coordinator': (role == 'coordinator'),
             'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
-
+            'is_bar_today': ('B' in code),
+            'coord_lounge': (coord_lounge if role == 'coordinator' else None),
         }
+
         if is_evening(s.shift_code):
             evening.append(item)
         elif is_morning(s.shift_code):
@@ -692,7 +817,6 @@ def month_shifts():
     first = _date(y, m, 1)
     last  = _date(y, m, monthrange(y, m)[1])
 
-    # один запрос с JOIN на пользователей
     q = (db.session.query(Shift, User)
          .join(User, User.id == Shift.user_id)
          .filter(Shift.shift_date >= first, Shift.shift_date <= last)
@@ -700,18 +824,29 @@ def month_shifts():
 
     out = {}
     for sh, u in q.all():
-        iso = sh.shift_date.isoformat()
+        iso  = sh.shift_date.isoformat()
         slot = 'evening' if str(sh.shift_code or '').strip().startswith('2') else 'morning'
         out.setdefault(iso, {'morning': [], 'evening': []})
+
+        role = (getattr(u, 'role', '') or '').lower()
+        code = (sh.shift_code or '').upper()
+        coord_lounge = getattr(sh, 'coord_lounge', None)  # ← безопасно
+
         out[iso][slot].append({
             'user_id': u.id,
             'full_name': u.full_name,
             'shift_code': sh.shift_code,
-            'is_coordinator': (getattr(u, 'role', '') or '').lower() in ('coordinator'),
+            'hours': sh.hours,
+            'order_index': getattr(u, 'order_index', None),
+            'is_coordinator': (role == 'coordinator'),
             'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
+            'is_bar_today': ('B' in code),
+            'coord_lounge': (coord_lounge if role == 'coordinator' else None),
         })
 
     return jsonify(out)
+
+
 
 
 @app.get('/api/shifts')
@@ -753,7 +888,8 @@ def get_all_shifts():
         dct = s.to_dict()
         dct.update({
             'order_index': getattr(u, 'order_index', None),
-            'is_coordinator': (getattr(u, 'role', '') or '').lower() in ('coordinator'),
+            'is_coordinator': ((getattr(u, 'role', '') or '').lower() == 'coordinator'),
+
             'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
         })
 
@@ -1344,7 +1480,7 @@ def market_offer_claim(oid):
     day = o.shift.shift_date
     if _has_shift(uid, day):
         return jsonify({'error':'Masz już zmianę w tym dniu.'}), 400
-    shift = off.shift
+    shift = o.shift
     if shift and shift.shift_date < warsaw_tomorrow():
         return jsonify({'error': 'Nie można wziąć zmiany z przeszłości ani z dzisiaj.'}), 400
 
@@ -1779,6 +1915,108 @@ def upload_text():
     return jsonify({'imported': imported, 'created_users': created_users})
 
 
+# ==== ДОБАВИТЬ ВНИЗ ФАЙЛА server.py (перед if __name__ == '__main__') ====
+
+class CoordShiftReport(db.Model):
+    __tablename__ = 'coord_shift_reports'
+    id           = db.Column(db.Integer, primary_key=True)
+    lounge       = db.Column(db.String(16), nullable=False)  # 'mazurek' | 'polonez'
+    shift_type   = db.Column(db.String(16), nullable=False)  # 'morning' | 'evening'
+    shift_date   = db.Column(db.Date, nullable=False)
+    coord_name   = db.Column(db.String, nullable=False)
+    times        = db.Column(db.JSON, default={})
+    bars         = db.Column(db.JSON, default={})
+    notes        = db.Column(db.JSON, default={})
+    created_at   = db.Column(db.DateTime(timezone=True), server_default=func.now())
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'lounge': self.lounge,
+            'shift_type': self.shift_type,
+            'shift_date': self.shift_date.isoformat(),
+            'coord_name': self.coord_name,
+            'times': self.times,
+            'bars': self.bars,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat()
+        }
+
+# Страница
+@app.get('/coord-panel')
+@jwt_required()
+def coord_panel_page():
+    role = (get_jwt().get('role') or '').lower()
+    if role != 'coordinator':
+        return redirect('/dashboard', 302)
+    return render_template('coord-panel.html')
+
+# GET API
+@app.get('/api/coord-panel/report')
+@jwt_required()
+def api_coord_panel_get():
+    role = (get_jwt().get('role') or '').lower()
+    if role != 'coordinator':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    lounge = request.args.get('lounge')
+    shift_type = request.args.get('shift_type')
+    date_str = request.args.get('date')
+    if not all([lounge, shift_type, date_str]):
+        return jsonify({'error': 'Missing params'}), 400
+    try:
+        d = datetime.fromisoformat(date_str).date()
+    except:
+        return jsonify({'error': 'Bad date'}), 400
+
+    rep = CoordShiftReport.query.filter_by(
+        lounge=lounge,
+        shift_type=shift_type,
+        shift_date=d
+    ).first()
+    return jsonify(rep.to_dict() if rep else {})
+
+# POST API
+@app.post('/api/coord-panel/report')
+@jwt_required()
+def api_coord_panel_save():
+    role = (get_jwt().get('role') or '').lower()
+    if role != 'coordinator':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    uid = int(get_jwt()['sub'])
+    user = User.query.get(uid)
+    data = request.get_json(force=True)
+
+    lounge = data['lounge']
+    shift_type = data['shift_type']
+    shift_date = datetime.fromisoformat(data['shift_date']).date()
+    bars = data['bars']
+    times = data['times']
+    notes = data['notes']
+
+    rep = CoordShiftReport.query.filter_by(
+        lounge=lounge,
+        shift_type=shift_type,
+        shift_date=shift_date
+    ).first()
+
+    if not rep:
+        rep = CoordShiftReport(
+            lounge=lounge,
+            shift_type=shift_type,
+            shift_date=shift_date,
+            coord_name=user.full_name
+        )
+        db.session.add(rep)
+
+    rep.bars  = bars
+    rep.times = times
+    rep.notes = notes
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
 # ---------------------------------
 # Pages
 # ---------------------------------
@@ -1818,6 +2056,9 @@ def proposals_page():
 def market_page():
     return render_template('market.html')
 
+
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', '5000'))
+    port = int(os.getenv('PORT', 5000))
+    with app.app_context():
+        ensure_coord_lounge_column()
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
