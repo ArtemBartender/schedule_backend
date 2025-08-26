@@ -822,3 +822,47 @@ main.container{
   z-index: 1001;
 }
 
+
+
+/* базовый чип */
+.person-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.35rem .6rem;
+  border-radius:999px;
+  background:var(--chip-bg, rgba(255,255,255,0.04));
+  border:1px solid rgba(255,255,255,0.08);
+  color:var(--chip-fg, #fff);
+  transition:background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+
+/* приоритет 1: коорд (жёлтый/синий как в pdf) */
+.person-chip.chip-coord       { --chip-fg:#111; --chip-bg:#ffe27a; border-color:transparent; }
+.person-chip.chip-coord-mazurek  { --chip-fg:#fff; --chip-bg:#1f4ed8; border-color:transparent; }
+.person-chip.chip-coord-polonez  { --chip-fg:#111; --chip-bg:#f6c000; border-color:transparent; }
+
+/* приоритет 2: змивак (нейтрально-фиолетовый/серый) */
+.person-chip.chip-zmiwak      { --chip-fg:#fff; --chip-bg:#6b5cff; border-color:transparent; }
+
+/* приоритет 3: бар (только если код дня содержит B) — мягкий зелёный */
+.person-chip.chip-bar         { --chip-fg:#0b2; --chip-bg:rgba(16,185,129,.18); border-color:rgba(16,185,129,.35); }
+
+/* бейджи внутри чипа пусть остаются аккуратными */
+.badge { padding:2px 8px; border-radius:999px; font-size:12px; line-height:18px; }
+.badge-coord { background:transparent; border:1px solid rgba(255,255,255,.35); color:inherit; }
+.badge-coord.lounge-mazurek { background:#1f4ed8; color:#fff; border-color:transparent; }
+.badge-coord.lounge-polonez { background:#f6c000; color:#111; border-color:transparent; }
+.badge-zmiwak { background:rgba(0,0,0,.25); color:#fff; }
+.badge-shift { background:rgba(0,0,0,.25); color:#fff; }
+
+
+.page-coord-panel .settings-inline {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+.page-coord-panel .settings-inline label {
+  margin: 0;
+}
