@@ -919,3 +919,56 @@ main.container{
   background:rgba(0,0,0,.25); color:#fff; border:1px solid rgba(255,255,255,.15);
 }
 .page-dashboard .chip .
+
+/* ==== TODAY (/start) подсветка чипов — точечно и поверх всего ==== */
+
+/* базовый вид, если вдруг другие правила сильнее */
+.page-start .sg-list .chip{
+  background:#0b1220 !important;
+  border:1px solid #1e2a3d !important;
+  color:#fff !important;
+}
+
+/* Координатор */
+.page-start .sg-list .chip:has(.badge-coord){
+  background:#ffe27a !important;
+  color:#111 !important;
+  border-color:transparent !important;
+}
+
+/* Координатор с лаунжем */
+.page-start .sg-list .chip:has(.badge-coord.lounge-mazurek){
+  background:#1f4ed8 !important;
+  color:#fff !important;
+  border-color:transparent !important;
+}
+.page-start .sg-list .chip:has(.badge-coord.lounge-polonez){
+  background:#f6c000 !important;
+  color:#111 !important;
+  border-color:transparent !important;
+}
+
+/* Змывак — у тебя класс именно badge-zmiwaka (с «a» на конце) */
+.page-start .sg-list .chip:has(.badge-zmiwaka){
+  background:#6b5cff !important;
+  color:#fff !important;
+  border-color:transparent !important;
+}
+
+/* Половинка смены (1/B, 2/B) — определяется по .code */
+.page-start .sg-list .chip:has(.code){
+  background:rgba(16,185,129,.18) !important;
+  color:#e8fff3 !important;
+  border-color:rgba(16,185,129,.35) !important;
+}
+
+/* Внутренние бейджи внутри чипа на стартовой */
+.page-start .sg-list .chip .badge{
+  background:rgba(0,0,0,.25);
+  color:#fff;
+  border:1px solid rgba(255,255,255,.15);
+  padding:2px 8px; border-radius:999px; font-size:12px; line-height:18px;
+}
+
+/* Имя — жирным и белым */
+.page-start .sg-list .chip .chip-name{ color:#fff; font-weight:800; }
