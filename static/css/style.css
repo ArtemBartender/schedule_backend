@@ -865,4 +865,57 @@ main.container{
 }
 .page-coord-panel .settings-inline label {
   margin: 0;
+
 }
+
+
+
+/* === TODAY: автоподсветка чипов по вложенным бейджам (чисто CSS) === */
+/* База (если вдруг на дашборде другая тема) */
+.page-dashboard .chip{
+  background:#0b1220;
+  border:1px solid #1e2a3d;
+  color:#fff;
+}
+
+/* Координатор (жёлтый/синий — как в графике) */
+.page-dashboard .chip:has(.badge-coord),
+.page-dashboard .chip.chip-coord{
+  --chip-fg:#111; --chip-bg:#ffe27a;
+  background:var(--chip-bg); color:var(--chip-fg); border-color:transparent;
+}
+
+/* Если внутри указан лаунж — точная расцветка */
+.page-dashboard .chip:has(.badge-coord.lounge-mazurek),
+.page-dashboard .chip.chip-coord-mazurek{
+  --chip-fg:#fff; --chip-bg:#1f4ed8;
+  background:var(--chip-bg); color:var(--chip-fg); border-color:transparent;
+}
+.page-dashboard .chip:has(.badge-coord.lounge-polonez),
+.page-dashboard .chip.chip-coord-polonez{
+  --chip-fg:#111; --chip-bg:#f6c000;
+  background:var(--chip-bg); color:var(--chip-fg); border-color:transparent;
+}
+
+/* Змывак (фиолетовый) — учтём оба написания класса */
+.page-dashboard .chip:has(.badge-zmiwak),
+.page-dashboard .chip:has(.badge-zmiwaka), /* у тебя в CSS встречаются оба варианта */
+.page-dashboard .chip.chip-zmiwak{
+  --chip-fg:#fff; --chip-bg:#6b5cff;
+  background:var(--chip-bg); color:var(--chip-fg); border-color:transparent;
+}
+
+/* Половинка смены (1/B и т.п.) — мягкий зелёный, если внутри есть бейдж половинки */
+.page-dashboard .chip:has(.badge-shift),
+.page-dashboard .chip.chip-bar{
+  background:rgba(16,185,129,.18);
+  color:#e8fff3;
+  border-color:rgba(16,185,129,.35);
+}
+
+/* Единый вид внутренних бейджей внутри чипа на дашборде */
+.page-dashboard .chip .badge{
+  padding:2px 8px; border-radius:999px; font-size:12px; line-height:18px;
+  background:rgba(0,0,0,.25); color:#fff; border:1px solid rgba(255,255,255,.15);
+}
+.page-dashboard .chip .
