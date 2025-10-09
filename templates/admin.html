@@ -50,6 +50,27 @@
         <label>PDF z grafikiem<br>
           <input type="file" name="file" accept="application/pdf" required />
         </label>
+        <section class="card" style="padding:12px">
+          <h2>Import zmian (PDF)</h2>
+          <form id="upload-form" class="settings-inline" enctype="multipart/form-data">
+            <label>PDF z grafikiem<br>
+              <input type="file" name="file" accept="application/pdf" required />
+            </label>
+        
+            <!-- ⬇️ НОВОЕ: флаг «новый парсер (kolory)» -->
+            <label style="display:flex;align-items:center;gap:8px;margin-left:12px">
+              <input type="checkbox" id="use-advanced" />
+              Użyj nowego parsera (kolory)
+            </label>
+        
+            <button class="btn-secondary" type="submit">Wyślij</button>
+            <div id="upload-msg" class="muted" style="margin-left:auto"></div>
+          </form>
+          <p class="muted" style="margin-top:6px">
+            * Nowy parser korzysta z kolorów cyfr i tła. Używa wyboru miesiąca/roku z sekcji „Import z tekstu”.
+          </p>
+        </section>
+
         <button class="btn-secondary" type="submit">Wyślij</button>
         <div id="upload-msg" class="muted" style="margin-left:auto"></div>
       </form>
@@ -83,3 +104,4 @@
   <script src="/static/js/admin.js"></script>
 </body>
 </html>
+
