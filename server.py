@@ -291,7 +291,10 @@ COORDINATORS_DEFAULT = {
     "Patrycja Gołebiowska", "Roman Wozniak", "Maria Romanova", "Alicja Daniel",
     "Karina Levchenko", "Artem Bilenko", "Wiktoria Utko",
 }
-ZMIWAKI_DEFAULT = {"Tetiana Rudiuk", "Maiia Rybchynchuk", "Maryna Prykhidko"}
+ZMIWAKI_DEFAULT = {
+    "Tetiana Rudiuk", "Maiia Rybchynchuk", "Marina Prykhodko", "Maryna Prykhodko",
+    "Марина Приходько",
+}
 
 def _norm(s: str) -> str:
     if s is None:
@@ -299,6 +302,28 @@ def _norm(s: str) -> str:
     s = s.strip().lower()
     s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
     return s
+
+COORDINATORS_DEFAULT_NORM = {_norm(name) for name in COORDINATORS_DEFAULT}
+ZMIWAKI_DEFAULT_NORM = {_norm(name) for name in ZMIWAKI_DEFAULT}
+
+
+def is_coordinator_user(user: User | None) -> bool:
+    if not user:
+        return False
+    if bool(getattr(user, 'is_coordinator', False)):
+        return True
+    role = (getattr(user, 'role', '') or '').lower()
+    if role == 'coordinator':
+        return True
+    return _norm(getattr(user, 'full_name', '')) in COORDINATORS_DEFAULT_NORM
+
+
+def is_zmiwaka_user(user: User | None) -> bool:
+    if not user:
+        return False
+    if bool(getattr(user, 'is_zmiwaka', False)):
+        return True
+    return _norm(getattr(user, 'full_name', '')) in ZMIWAKI_DEFAULT_NORM
 
 DATE_PATTERNS = [
     (re.compile(r'^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$'), ('d','m','y')),
@@ -780,20 +805,18 @@ def day_shifts():
         u = s.user
         role = (getattr(u, 'role', '') or '').lower()
         code = (s.shift_code or '').upper()
-        coord_lounge = getattr(s, 'coord_lounge', None)  # ← защита
-
+        coord_lounge = getattr(s, 'coord_lounge', None)  # ← защит
         item = {
             'user_id': u.id if u else None,
             'full_name': (u.full_name if u else None),
             'shift_code': s.shift_code,
             'hours': s.hours,
             'order_index': getattr(u, 'order_index', None),
-            'is_coordinator': (role == 'coordinator'),
-            'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
+            'is_coordinator': is_coordinator_user(u),
+            'is_zmiwaka': is_zmiwaka_user(u),
             'is_bar_today': ('B' in code),
             'coord_lounge': (coord_lounge if role == 'coordinator' else None),
         }
-
         if is_evening(s.shift_code):
             evening.append(item)
         elif is_morning(s.shift_code):
@@ -828,21 +851,21 @@ def month_shifts():
         slot = 'evening' if str(sh.shift_code or '').strip().startswith('2') else 'morning'
         out.setdefault(iso, {'morning': [], 'evening': []})
 
-        role = (getattr(u, 'role', '') or '').lower()
-        code = (sh.shift_code or '').upper()
-        coord_lounge = getattr(sh, 'coord_lounge', None)  # ← безопасно
-
-        out[iso][slot].append({
-            'user_id': u.id,
-            'full_name': u.full_name,
-            'shift_code': sh.shift_code,
-            'hours': sh.hours,
-            'order_index': getattr(u, 'order_index', None),
-            'is_coordinator': (role == 'coordinator'),
-            'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
-            'is_bar_today': ('B' in code),
-            'coord_lounge': (coord_lounge if role == 'coordinator' else None),
-        })
+        role = (getattr(u, 'role', '') or '').lower()␊
+        code = (sh.shift_code or '').upper()␊
+        coord_lounge = getattr(sh, 'coord_lounge', None)  # ← безопасно␊
+␊
+        out[iso][slot].append({␊
+            'user_id': u.id,␊
+            'full_name': u.full_name,␊
+            'shift_code': sh.shift_code,␊
+            'hours': sh.hours,␊
+            'order_index': getattr(u, 'order_index', None),␊
+            'is_coordinator': is_coordinator_user(u),
+            'is_zmiwaka': is_zmiwaka_user(u),
+            'is_bar_today': ('B' in code),␊
+            'coord_lounge': (coord_lounge if role == 'coordinator' else None),␊
+        })␊
 
     return jsonify(out)
 
@@ -888,9 +911,8 @@ def get_all_shifts():
         dct = s.to_dict()
         dct.update({
             'order_index': getattr(u, 'order_index', None),
-            'is_coordinator': ((getattr(u, 'role', '') or '').lower() == 'coordinator'),
-
-            'is_zmiwaka': bool(getattr(u, 'is_zmiwaka', False)),
+            'is_coordinator': is_coordinator_user(u),
+            'is_zmiwaka': is_zmiwaka_user(u),
         })
 
         out.append(dct)
@@ -2062,4 +2084,5 @@ if __name__ == '__main__':
     with app.app_context():
         ensure_coord_lounge_column()
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
