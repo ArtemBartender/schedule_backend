@@ -2489,12 +2489,19 @@ def market_page():
     return render_template('market.html')
 
 
+@app.errorhandler(Exception)
+def catch_all(e):
+    app.logger.exception("Unhandled")
+    return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     with app.app_context():
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
