@@ -104,7 +104,7 @@
       ${person?.is_coordinator
         ? `<span class="badge badge-coord${person?.coord_lounge ? (' lounge-' + person.coord_lounge) : ''}">koord.</span>`
         : ''}
-      ${person?.is_zmiwaka ? `<span class="badge badge-zmiwak">zmiwak</span>` : ''}
+      ${person?.is_zmiwaka ? `<span class="badge badge-zmiwak">zmywak</span>` : ''}
       ${person?.shift_code ? `<span class="badge badge-shift">${esc(person.shift_code)}</span>` : ''}
     `;
 
@@ -432,3 +432,4 @@
   })();
 
 })();
+
