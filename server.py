@@ -124,7 +124,7 @@ class Shift(db.Model):
             'shift_code': self.shift_code,
             'hours': self.hours,
             'worked_hours': float(self.worked_hours) if self.worked_hours is not None else None,
-            # ↓↓↓ ДОБАВИТЬ
+            'lounge': self.lounge,
             'lounge': self.lounge,
             'coord_lounge': self.coord_lounge,
         }
@@ -294,6 +294,7 @@ def ensure_lounge_column():
     if 'lounge' not in cols:
         db.session.execute(text("ALTER TABLE shifts ADD COLUMN lounge VARCHAR(16)"))
         db.session.commit()
+
 
 # ---------------------------------
 # Helpers
@@ -2289,7 +2290,10 @@ def upload_xlsx():
             shift_date=d_iso,
             shift_code=r.get('shift') or '',
             hours=None
+            lounge=(r.get('lounge') or None),            # НОВОЕ — обычная локация (цвет цифры)
+            coord_lounge=(r.get('coord_lounge') or None) # НОВОЕ — если ячейка была подсвечена как координатор
         )
+    
         # сохраняем только coord_lounge (колонка существует)
         sh.coord_lounge = r.get('coord_lounge') or None
 
@@ -2526,6 +2530,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
