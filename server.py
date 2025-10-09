@@ -289,9 +289,9 @@ def ensure_coord_lounge_column():
 COORDINATORS_DEFAULT = {
     "Justyna Świstak", "Alicja Palczewska", "Jakub Włodarczyk", "Alicja Kupczyk",
     "Patrycja Gołebiowska", "Roman Wozniak", "Maria Romanova", "Alicja Daniel",
-    "Karina Levchenko",
+    "Karina Levchenko", "Artem Bilenko", "Wiktoria Utko",
 }
-ZMIWAKI_DEFAULT = {"Tetiana Rudiuk", "Maiia Rybchynchuk"}
+ZMIWAKI_DEFAULT = {"Tetiana Rudiuk", "Maiia Rybchynchuk", "Maryna Prykhidko"}
 
 def _norm(s: str) -> str:
     if s is None:
@@ -2062,3 +2062,4 @@ if __name__ == '__main__':
     with app.app_context():
         ensure_coord_lounge_column()
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
