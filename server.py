@@ -835,7 +835,7 @@ def day_shifts():
             'is_coordinator': is_coordinator_user(u),
             'is_zmiwaka': is_zmiwaka_user(u),
             'is_bar_today': ('B' in code),
-            'lounge': getattr(s, 'lounge', None),
+            'lounge': getattr(sh, 'lounge', None),
             'coord_lounge': (coord_lounge if role == 'coordinator' else None),
         }
         if is_evening(s.shift_code):
@@ -2530,6 +2530,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
