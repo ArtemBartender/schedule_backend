@@ -37,78 +37,72 @@
       <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
       <a href="/market" class="menu-item">Rynek</a>
       <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
-      
       <hr class="menu-sep" />
       <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
     </nav>
   </header>
 
   <main class="container">
-    <section class="card" style="padding:12px">
-      <h2>Import zmian (PDF)</h2>
-      <form id="upload-form" class="settings-inline" enctype="multipart/form-data">
-        <label>PDF z grafikiem<br>
-          <input type="file" name="file" accept="application/pdf" required />
+
+    <!-- ===== Import z pliku XLSX ===== -->
+    <section class="card" style="padding:16px">
+      <h2 style="margin-bottom:10px">Import zmian (XLSX)</h2>
+
+      <form id="upload-form" enctype="multipart/form-data" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">
+        <label style="display:flex;flex-direction:column;gap:6px">
+          <span>Plik z grafikiem (XLSX)</span>
+          <input type="file" name="file"
+                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                 required />
         </label>
-        <section class="card" style="padding:16px">
-          <h2 style="margin-bottom:10px">Import zmian (PDF)</h2>
-        
-          <form id="upload-form" enctype="multipart/form-data" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">
-            <label style="display:flex;flex-direction:column;gap:6px">
-              <span>PDF z grafikiem</span>
-              <input type="file" name="file" accept="application/pdf" required />
-            </label>
-        
-            <label style="display:flex;flex-direction:column;gap:6px">
-              <span>Miesiąc</span>
-              <select id="month-select" required style="min-width:110px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
-            </label>
-        
-            <label style="display:flex;flex-direction:column;gap:6px">
-              <span>Rok</span>
-              <select id="year-select" required style="min-width:110px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
-            </label>
-        
-            <label style="display:flex;align-items:center;gap:8px;margin-left:8px">
-              <input type="checkbox" id="use-advanced" />
-              <span>Użyj nowego parsera (kolory)</span>
-            </label>
-        
-            <button class="btn-secondary" type="submit" style="margin-left:auto">Wyślij</button>
-            <div id="upload-msg" class="muted"></div>
-          </form>
-        
-          <p class="muted" style="margin-top:8px">
-            * Nowy parser czyta kolory cyfr (Mazurek/Polonez) i tło (koordynator Mazurek/Polonez).
-          </p>
-        </section>
 
+        <label style="display:flex;flex-direction:column;gap:6px">
+          <span>Miesiąc</span>
+          <select id="month-select" required
+                  style="min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
+        </label>
 
-        <button class="btn-secondary" type="submit">Wyślij</button>
-        <div id="upload-msg" class="muted" style="margin-left:auto"></div>
+        <label style="display:flex;flex-direction:column;gap:6px">
+          <span>Rok</span>
+          <select id="year-select" required
+                  style="min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
+        </label>
+
+        <button class="btn-secondary" type="submit" style="margin-left:auto">Wyślij</button>
+        <div id="upload-msg" class="muted"></div>
       </form>
+
+      <p class="muted" style="margin-top:8px">
+        * Import czyta kolory cyfr (Mazurek/Polonez) i tło (koordynator Mazurek/Polonez) bezpośrednio z arkusza.
+      </p>
     </section>
 
-    <section class="card" style="padding:12px;margin-top:12px;">
+    <!-- ===== Import z tekstu (fallback) ===== -->
+    <section class="card" style="padding:16px;margin-top:12px;">
       <h2>Import z tekstu</h2>
-      <div class="settings-inline" style="margin-bottom:8px;">
-        <label>Miesiąc<br>
-          <select id="month-select" style="min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
-        </label>
-        <label>Rok<br>
-          <select id="year-select" style="min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
-        </label>
-      </div>
-      <form id="paste-form" class="settings-inline">
+      <form id="paste-form" class="settings-inline" style="display:flex;flex-direction:column;gap:12px">
+        <div class="settings-inline" style="display:flex;gap:12px">
+          <label>Miesiąc<br>
+            <select id="month-select-text"
+                    style="min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
+          </label>
+          <label>Rok<br>
+            <select id="year-select-text"
+                    style="min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
+          </label>
+        </div>
         <label style="width:100%">Wklej tekst<br>
-          <textarea name="text" rows="10" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></textarea>
+          <textarea name="text" rows="10"
+                    style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></textarea>
         </label>
-        <button class="btn-secondary" type="submit">Zaimportuj</button>
-        <div id="paste-msg" class="muted" style="margin-left:auto"></div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <button class="btn-secondary" type="submit">Zaimportuj</button>
+          <div id="paste-msg" class="muted" style="margin-left:auto"></div>
+        </div>
       </form>
     </section>
 
-    <section class="card" style="padding:12px;margin-top:12px;">
+    <section class="card" style="padding:16px;margin-top:12px;">
       <button id="logout-btn" class="btn-secondary">Wyloguj (admin)</button>
     </section>
   </main>
@@ -117,5 +111,3 @@
   <script src="/static/js/admin.js"></script>
 </body>
 </html>
-
-
