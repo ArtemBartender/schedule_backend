@@ -840,7 +840,7 @@ main.container{
 /* приоритет 1: коорд (жёлтый/синий как в pdf) */
 .person-chip.chip-coord       { --chip-fg:#111; --chip-bg:#ffe27a; border-color:transparent; }
 .person-chip.chip-coord-mazurek  { --chip-fg:#fff; --chip-bg:#1f4ed8; border-color:transparent; }
-.person-chip.chip-coord-polonez  { --chip-fg:#111; --chip-bg:#f6c000; border-color:transparent; }
+.person-chip.chip-coord-polonez  { --chip-fg:#fff; --chip-bg:#f6c000; border-color:transparent; }
 
 /* приоритет 2: змивак (нейтрально-фиолетовый/серый) */
 .person-chip.chip-zmiwak      { --chip-fg:#fff; --chip-bg:#6b5cff; border-color:transparent; }
@@ -852,7 +852,7 @@ main.container{
 .badge { padding:2px 8px; border-radius:999px; font-size:12px; line-height:18px; }
 .badge-coord { background:transparent; border:1px solid rgba(255,255,255,.35); color:inherit; }
 .badge-coord.lounge-mazurek { background:#1f4ed8; color:#fff; border-color:transparent; }
-.badge-coord.lounge-polonez { background:#f6c000; color:#111; border-color:transparent; }
+.badge-coord.lounge-polonez { background:#f6c000; color:#fff; border-color:transparent; }
 .badge-zmiwak { background:rgba(0,0,0,.25); color:#fff; }
 .badge-shift { background:rgba(0,0,0,.25); color:#fff; }
 
@@ -893,7 +893,7 @@ main.container{
 }
 .page-dashboard .chip:has(.badge-coord.lounge-polonez),
 .page-dashboard .chip.chip-coord-polonez{
-  --chip-fg:#111; --chip-bg:#f6c000;
+  --chip-fg:#fff; --chip-bg:#f6c000;
   background:var(--chip-bg); color:var(--chip-fg); border-color:transparent;
 }
 
@@ -947,5 +947,6 @@ main.container{
 /* уже есть у тебя, на всякий случай: */
 .badge-zmiwak, .badge-zmywak { background: rgba(160,160,165,.18); border: 1px solid rgba(160,160,165,.55); }
 .badge-bar { background: rgba(255,214,74,.18); border: 1px solid rgba(255,214,74,.55); }
+
 
 
