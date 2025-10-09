@@ -2289,7 +2289,7 @@ def upload_xlsx():
             user_id=u.id,
             shift_date=d_iso,
             shift_code=r.get('shift') or '',
-            hours=None
+            hours=None,
             lounge=(r.get('lounge') or None),            # НОВОЕ — обычная локация (цвет цифры)
             coord_lounge=(r.get('coord_lounge') or None) # НОВОЕ — если ячейка была подсвечена как координатор
         )
@@ -2530,6 +2530,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
