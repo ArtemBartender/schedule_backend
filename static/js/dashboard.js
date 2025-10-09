@@ -54,12 +54,15 @@
   const iWorkThatDay = iso => MY_MAP.has(iso);
 
   // ========= Chips =========
-  function styleAccentByLounge(el, lounge){
-    // “ореол” по лаунжу, если сервер начнёт присылать person.lounge (не мешает, если его нет)
-    if (lounge === 'mazurek') {
-      el.style.boxShadow = 'inset 0 0 0 2px rgba(42,110,245,.45)';
-    } else if (lounge === 'polonez') {
-      el.style.boxShadow = 'inset 0 0 0 2px rgba(255,214,74,.55)';
+  function styleAccent(el, kind){
+    // kind: 'mazurek' | 'polonez' | 'zmywak' | ''
+    if (!kind) return;
+    if (kind === 'mazurek') {
+      el.style.boxShadow = 'inset 0 0 0 2px rgba(42,110,245,.45)';   // синий
+    } else if (kind === 'polonez') {
+      el.style.boxShadow = 'inset 0 0 0 2px rgba(255,214,74,.55)';   // жёлтый
+    } else if (kind === 'zmywak') {
+      el.style.boxShadow = 'inset 0 0 0 2px rgba(150,160,170,.65)';  // серый
     }
   }
   function badge(text, cls){
@@ -68,42 +71,57 @@
     b.textContent = text;
     return b;
   }
+
+  
   function chip(person, isoDate) {
-    // person из API month-shifts/day-shifts:
-    // { full_name, shift_code, is_zmiwaka, is_bar_today, coord_lounge, [lounge?] }
     const el = document.createElement('span');
     el.className = 'person-chip';
     el.title = person?.full_name || '';
-
-    // необязательный акцент по lounge (если когда-нибудь начнём его отдавать)
+  
+    // --- бейджи/признаки
+    // bar?
+    const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
+    const isBar = person?.is_bar_today ?? looksBar;
+  
+    // змывак?
+    const isZ = !!person?.is_zmiwaka;
+  
+    // координатор на ЭТУ смену?
+    const coordLounge = (person?.coord_lounge || '').toLowerCase();
+  
+    // lounge от цифры (если когда-либо начнём его отдавать)
     const lounge = (person?.lounge || '').toLowerCase();
-    if (lounge) styleAccentByLounge(el, lounge);
-
+  
+    // --- рамка-приоритеты:
+    // 1) змывак -> серый
+    // 2) бармен -> жёлтый (полонез)
+    // 3) иначе: по lounge (если есть)
+    let frame = '';
+    if (isZ) frame = 'zmywak';
+    else if (isBar) frame = 'polonez';
+    else if (lounge === 'mazurek' || lounge === 'polonez') frame = lounge;
+    styleAccent(el, frame);
+  
     // имя
     const nm = document.createElement('span');
     nm.className = 'name';
     nm.textContent = person?.full_name || '';
     el.appendChild(nm);
-
-    // бар?
-    const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
-    const isBar = person?.is_bar_today ?? looksBar;
+  
+    // бейджи
     if (isBar) el.appendChild(badge('bar','badge-bar'));
-
-    // координатор ТОЛЬКО если у этой записи есть coord_lounge
+  
     if (person?.coord_lounge){
       const k = badge('koord.','badge-coord');
-      const cl = String(person.coord_lounge).toLowerCase();
-      if (cl === 'mazurek') k.classList.add('lounge-mazurek');
-      else if (cl === 'polonez') k.classList.add('lounge-polonez');
+      if (coordLounge === 'mazurek') k.classList.add('lounge-mazurek');
+      else if (coordLounge === 'polonez') k.classList.add('lounge-polonez');
       el.appendChild(k);
     }
-
-    // змывак?
-    if (person?.is_zmiwaka){
+  
+    if (isZ){
       el.appendChild(badge('zmywak','badge-zmiwak'));
     }
-
+  
     // код (1/2, скрываем /B в бейдже)
     const codeText = String(person?.shift_code || '').replace(/\s+/g,'').replace('/B','').replace('B','');
     if (codeText){
@@ -112,7 +130,7 @@
       c.textContent = codeText;
       el.appendChild(c);
     }
-
+  
     // клик — панель действий
     el.addEventListener('click', (e) => { e.stopPropagation(); showActionsUnderDay(isoDate, person); });
     return el;
@@ -390,3 +408,4 @@
   })();
 
 })();
+
