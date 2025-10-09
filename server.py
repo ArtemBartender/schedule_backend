@@ -853,7 +853,7 @@ def month_shifts():
 
         role = (getattr(u, 'role', '') or '').lower()
         code = (sh.shift_code or '').upper()
-        coord_lounge = getattr(sh, 'coord_lounge', None)  # ← безопасно
+        coord_lounge = getattr(sh, 'coord_lounge', None)
 
         out[iso][slot].append({
             'user_id': u.id,
@@ -2084,6 +2084,7 @@ if __name__ == '__main__':
     with app.app_context():
         ensure_coord_lounge_column()
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
