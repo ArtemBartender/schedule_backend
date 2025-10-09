@@ -74,12 +74,14 @@
     const msg = document.getElementById('upload-msg');
     btn.disabled = true; msg.textContent = '';
     try{
-      const fd  = new FormData(uploadForm);
-      const res = await fetch('/api/upload-pdf', {
-        method:'POST',
+      const useAdv = document.getElementById('use-advanced')?.checked;
+      const url = useAdv ? '/api/upload-pdf-adv' : '/api/upload-pdf';
+      const res = await fetch(url, {
+        method: 'POST',
         headers: { 'Authorization':'Bearer '+token },
         body: fd
       });
+
       const data = await res.json().catch(()=> ({}));
       if (!res.ok) throw data;
       msg.textContent = `Import: ${data.imported}` + (Array.isArray(data.created_users) ? `, users: ${data.created_users.length}` : '');
@@ -133,3 +135,4 @@
     }
   });
 })();
+
