@@ -1791,74 +1791,268 @@ def extract_rows_from_pasted_text(text: str, month_hint: int | None = None):
 
     return rows
 
-@app.post('/api/upload-pdf')
+# ====== ADVANCED PDF PARSER (цвет цифры + цвет заливки) ======
+from typing import Tuple, Optional
+
+def _norm_rgb(c):
+    """
+    pdfplumber возвращает цвет как:
+      - None
+      - число серого [0..1]
+      - кортеж (r,g,b) в [0..1]
+    Преобразуем в (R,G,B) 0..255
+    """
+    if c is None:
+        return None
+    if isinstance(c, (int, float)):
+        v = max(0, min(1, float(c)))
+        v = int(round(v * 255))
+        return (v, v, v)
+    try:
+        r, g, b = c[:3]
+        r = int(round(max(0, min(1, float(r))) * 255))
+        g = int(round(max(0, min(1, float(g))) * 255))
+        b = int(round(max(0, min(1, float(b))) * 255))
+        return (r, g, b)
+    except Exception:
+        return None
+
+def _is_blue(rgb: Optional[Tuple[int,int,int]]) -> bool:
+    if not rgb: return False
+    r,g,b = rgb
+    # голубой/синий: доминирует B, достаточно яркий
+    return (b - max(r,g) >= 40) and b >= 140
+
+def _is_black(rgb: Optional[Tuple[int,int,int]]) -> bool:
+    if not rgb: return False
+    r,g,b = rgb
+    return (r+g+b) <= 120  # тёмный
+
+def _is_yellow(rgb: Optional[Tuple[int,int,int]]) -> bool:
+    if not rgb: return False
+    r,g,b = rgb
+    # жёлтый: высокие R и G, низкий B
+    return (r >= 200 and g >= 180 and b <= 140)
+
+def _bbox_overlaps(a, b) -> bool:
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    return not (ax1 <= bx0 or bx1 <= ax0 or ay1 <= by0 or by1 <= ay0)
+
+def _cell_chars(chars, bbox):
+    x0,y0,x1,y1 = bbox
+    out = []
+    for ch in chars:
+        cx0, cy0, cx1, cy1 = ch.get('x0'), ch.get('top'), ch.get('x1'), ch.get('bottom')
+        if cx0 is None: 
+            continue
+        # небольшой допуск
+        if (cx1 > x0-0.5 and cx0 < x1+0.5 and cy1 > y0-0.5 and cy0 < y1+0.5):
+            out.append(ch)
+    return out
+
+def _majority_color(chars):
+    # берём цвет цифр/символов, усреднённо
+    rgbs = []
+    for ch in chars:
+        rgb = _norm_rgb(ch.get('non_stroking_color'))
+        if rgb: rgbs.append(rgb)
+    if not rgbs:
+        return None
+    # среднее
+    r = sum(c[0] for c in rgbs)//len(rgbs)
+    g = sum(c[1] for c in rgbs)//len(rgbs)
+    b = sum(c[2] for c in rgbs)//len(rgbs)
+    return (r,g,b)
+
+def _cell_fill_color(rects, bbox):
+    # ищем прямоугольник заливки, перекрывающий ячейку
+    for r in rects:
+        rb = (r.get('x0'), r.get('top'), r.get('x1'), r.get('bottom'))
+        if None in rb: 
+            continue
+        if _bbox_overlaps(bbox, rb):
+            rgb = _norm_rgb(r.get('non_stroking_color'))
+            if rgb:
+                return rgb
+    return None
+
+def _parse_schedule_pdf_advanced(file_bytes: bytes, year: int, month: int):
+    """
+    Возвращает записи:
+      {'name', 'date'(YYYY-MM-DD), 'shift', 'lounge', 'coord_lounge'}
+    lounge: 'mazurek'|'polonez'|None
+    coord_lounge: 'mazurek'|'polonez'|None
+    """
+    import pdfplumber
+    from datetime import date as _date_cls
+
+    out = []
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            words = page.extract_words(use_text_flow=True, keep_blank_chars=False)
+            chars = page.chars or []
+            rects = page.rects or []
+
+            # 1) найдём заголовок с датами (1..31) — возьмём их X-координаты как границы колонок
+            # Берём первую строку, где >= 10 токенов вида числа 1..31
+            date_words = [w for w in words if re.fullmatch(r'\d{1,2}', w.get('text','').strip())]
+            # сгруппируем по y (строки)
+            rows_by_y = {}
+            for w in date_words:
+                key = round(w['top'] / 5)  # грубая кластеризация по высоте
+                rows_by_y.setdefault(key, []).append(w)
+            header_row = None
+            for _, arr in sorted(rows_by_y.items(), key=lambda kv: len(kv[1]), reverse=True):
+                vals = [int(w['text']) for w in arr if 1 <= int(w['text']) <= 31]
+                if len(vals) >= 10:  # достаточно столбцов
+                    header_row = sorted(arr, key=lambda w: w['x0'])
+                    break
+            if not header_row:
+                continue
+
+            # Список границ X для каждого дня (берём центр слова)
+            x_centers = [ (w['x0'] + w['x1'])/2.0 for w in header_row ]
+            days      = [ int(w['text']) for w in header_row ]
+            # отсортировать на всякий случай
+            cols = sorted(zip(days, x_centers), key=lambda t: t[0])
+            # фильтр по нашему месяцу (1..N)
+            cols = [(d,x) for (d,x) in cols if 1 <= d <= 31]
+            if not cols:
+                continue
+
+            # превратим точки в интервалы (границы колонок)
+            # граница для дня d — середина между центрами d-1 и d
+            xs = [x for _,x in cols]
+            xbounds = []
+            for i,x in enumerate(xs):
+                left  = xs[i-1] + (x - xs[i-1]) * 0.5 if i>0 else x - 8   # небольшой fallback
+                right = xs[i+1] - (xs[i+1] - x) * 0.5 if i<len(xs)-1 else x + 8
+                xbounds.append((left, right))
+
+            # 2) найдём строки сотрудников: берём слова слева от первой колонки и тянем по Y
+            first_col_left = min(l for l,_ in xbounds) - 5
+            name_candidates = [w for w in words if w['x1'] <= first_col_left and len(w['text'].strip())>1]
+            # сгруппируем по строкам (y)
+            name_rows = {}
+            for w in name_candidates:
+                key = round(w['top'] / 2)  # плотнее, имена часто в 2 слова
+                name_rows.setdefault(key, []).append(w)
+
+            # для каждой строки — имя и y-границы строки
+            rows = []
+            for _, arr in name_rows.items():
+                arr = sorted(arr, key=lambda w: w['x0'])
+                name = ' '.join(w['text'] for w in arr).strip()
+                if not name or re.match(r'(?i)^(plan|braki|nazwisko)', name):
+                    continue
+                top = min(w['top'] for w in arr)
+                bottom = max(w['bottom'] for w in arr)
+                rows.append((name, top-1, bottom+1))
+            # отсортируем сверху-вниз
+            rows.sort(key=lambda r: r[1])
+
+            # 3) обходим ячейки: (row, day)
+            for name, y0, y1 in rows:
+                for (day,(xl,xr)), (_,xc) in zip(enumerate(xbounds, start=1), cols):
+                    try:
+                        d = _date_cls(year, month, day)
+                    except Exception:
+                        continue
+                    bbox = (xl, y0, xr, y1)
+
+                    cell_ch = _cell_chars(chars, bbox)
+                    # вытащим код смены по видимому тексту
+                    txt = ''.join(ch['text'] for ch in sorted(cell_ch, key=lambda c: (c['x0'], c['top']))).strip()
+                    if not txt:
+                        continue
+                    # нормализуем: допустим варианты '1', '2', '1/B', '2/B', '1 B'
+                    txt_norm = txt.upper().replace(' ', '')
+                    if txt_norm not in ('1','2','1/B','2/B','1B','2B'):
+                        # игнорируем мусор и 'X'
+                        continue
+                    shift_code = '1/B' if txt_norm in ('1/B','1B') else ('2/B' if txt_norm in ('2/B','2B') else txt_norm)
+
+                    # цвет цифр → lounge
+                    rgb_text = _majority_color(cell_ch)
+                    lounge = 'mazurek' if _is_blue(rgb_text) else ('polonez' if _is_black(rgb_text) else None)
+
+                    # заливка ячейки → координатор
+                    fill_rgb = _cell_fill_color(rects, bbox)
+                    coord_lounge = None
+                    if _is_blue(fill_rgb):
+                        coord_lounge = 'mazurek'
+                    elif _is_yellow(fill_rgb):
+                        coord_lounge = 'polonez'
+
+                    out.append({
+                        'name': name,
+                        'date': d.isoformat(),
+                        'shift': shift_code,
+                        'lounge': lounge,
+                        'coord_lounge': coord_lounge
+                    })
+    return out
+
+@app.post('/api/upload-pdf-adv')
 @jwt_required()
-def upload_pdf():
+def upload_pdf_advanced():
+    """Импорт PDF со считыванием цвета цифры (локация) и заливки (координатор)."""
     claims = get_jwt() or {}
     if (claims.get('role') or '').lower() != 'admin':
         return jsonify({'error': 'Tylko administrator może przesyłać PDF.'}), 403
 
-    if 'file' not in request.files:
-        return jsonify({'error': 'Nie znaleziono pliku (form-data: file).'}), 400
-    f = request.files['file']
-    if not f or f.filename == '':
-        return jsonify({'error': 'Pusta nazwa pliku.'}), 400
+    f = request.files.get('file')
+    year  = int(request.form.get('year') or 0)
+    month = int(request.form.get('month') or 0)
+    if not f or year < 2000 or not (1 <= month <= 12):
+        return jsonify({'error': 'Podaj plik, rok i miesiąc.'}), 400
 
     data = f.read()
     try:
-        rows = extract_rows_from_pdf(data)
+        rows = _parse_schedule_pdf_advanced(data, year, month)
     except Exception as e:
         return jsonify({'error': f'Błąd odczytu PDF: {e}'}), 400
 
-    first_seen, seq = {}, 0
-    for r in rows:
-        nm = (r.get('name') or '').strip()
-        if nm and nm not in first_seen:
-            first_seen[nm] = seq; seq += 1
+    # Сбросим только нужный месяц (и офферы)
+    first = _date(year, month, 1)
+    last  = _date(year, month, monthrange(year, month)[1])
+
+    shift_ids = [s.id for s in Shift.query.filter(Shift.shift_date>=first, Shift.shift_date<=last).all()]
+    if shift_ids:
+        try:
+            MarketOffer.query.filter(MarketOffer.shift_id.in_(shift_ids)).delete(synchronize_session=False)
+        except Exception:
+            db.session.execute(db.text("DELETE FROM market_offers WHERE shift_id = ANY(:ids)"), {'ids': shift_ids})
+        Shift.query.filter(Shift.id.in_(shift_ids)).delete(synchronize_session=False)
+    db.session.commit()
 
     users_by_key = {_norm(u.full_name): u for u in User.query.all()}
-
-    try:
-        MarketOffer.query.delete(synchronize_session=False)
-    except Exception:
-        db.session.execute(db.text("DELETE FROM market_offers"))
-    db.session.commit()
-
-    Shift.query.delete(synchronize_session=False)
-    db.session.commit()
-
     imported = 0
     created_users = []
-    seen_pairs = set()
 
     for r in rows:
-        name = (r.get('name') or '').strip()
+        name = r['name'].strip()
         if not name: 
             continue
         key = _norm(name)
-        user = users_by_key.get(key)
-        if not user:
-            user = User(full_name=name, role='user')
-            db.session.add(user); db.session.flush()
-            users_by_key[key] = user
-            created_users.append(user.full_name)
+        u = users_by_key.get(key)
+        if not u:
+            u = User(full_name=name, role='user')
+            db.session.add(u); db.session.flush()
+            users_by_key[key] = u
+            created_users.append(u.full_name)
 
-        if name in first_seen:
-            user.order_index = first_seen[name]
-
-        d_iso = parse_date_fuzzy(r.get('date'))  # PDF обычно содержит полную дату
-        if not d_iso:
-            continue
-
-        shift_code = (r.get('shift') or '').strip() or '—'
-        hours = r.get('hours') if r.get('hours') is not None else 0
-
-        pair = (user.id, d_iso)
-        if pair in seen_pairs: 
-            continue
-        seen_pairs.add(pair)
-
-        db.session.add(Shift(user_id=user.id, shift_date=d_iso, shift_code=shift_code, hours=hours))
+        sh = Shift(
+            user_id = u.id,
+            shift_date = r['date'],
+            shift_code = r['shift'],
+            hours = None,
+        )
+        # Если в ячейке отмечен координатор — ставим на смену
+        if r.get('coord_lounge'):
+            sh.coord_lounge = r['coord_lounge']
+        db.session.add(sh)
         imported += 1
 
     db.session.commit()
@@ -2084,6 +2278,7 @@ if __name__ == '__main__':
     with app.app_context():
         ensure_coord_lounge_column()
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
