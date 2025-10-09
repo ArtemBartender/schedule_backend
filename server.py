@@ -111,8 +111,9 @@ class Shift(db.Model):
     worked_hours = db.Column(db.Numeric(5, 2), nullable=True)
     work_note = db.Column(db.Text, nullable=True)
 
+    # ↓↓↓ ДОБАВИТЬ
+    lounge = db.Column(db.String(16))         # 'mazurek' | 'polonez' | None
     coord_lounge = db.Column(db.String(16))   # 'mazurek' | 'polonez' | None
-
 
     def to_dict(self):
         return {
@@ -123,8 +124,11 @@ class Shift(db.Model):
             'shift_code': self.shift_code,
             'hours': self.hours,
             'worked_hours': float(self.worked_hours) if self.worked_hours is not None else None,
+            # ↓↓↓ ДОБАВИТЬ
+            'lounge': self.lounge,
             'coord_lounge': self.coord_lounge,
         }
+
 
 
 class SwapProposal(db.Model):
@@ -283,6 +287,14 @@ def ensure_coord_lounge_column():
         db.session.execute(text("ALTER TABLE shifts ADD COLUMN coord_lounge VARCHAR(16)"))
         db.session.commit()
 
+
+def ensure_lounge_column():
+    insp = db.inspect(db.engine)
+    cols = [c['name'] for c in insp.get_columns('shifts')]
+    if 'lounge' not in cols:
+        db.session.execute(text("ALTER TABLE shifts ADD COLUMN lounge VARCHAR(16)"))
+        db.session.commit()
+
 # ---------------------------------
 # Helpers
 # ---------------------------------
@@ -295,6 +307,13 @@ ZMIWAKI_DEFAULT = {
     "Tetiana Rudiuk", "Maiia Rybchynchuk", "Marina Prykhodko", "Maryna Prykhodko",
     "Марина Приходько",
 }
+
+def current_user():
+    try:
+        uid = int((get_jwt() or {}).get('sub'))
+    except Exception:
+        return None
+    return db.session.get(User, uid)
 
 def _norm(s: str) -> str:
     if s is None:
@@ -815,6 +834,7 @@ def day_shifts():
             'is_coordinator': is_coordinator_user(u),
             'is_zmiwaka': is_zmiwaka_user(u),
             'is_bar_today': ('B' in code),
+            'lounge': getattr(s, 'lounge', None),
             'coord_lounge': (coord_lounge if role == 'coordinator' else None),
         }
         if is_evening(s.shift_code):
@@ -864,6 +884,7 @@ def month_shifts():
             'is_coordinator': is_coordinator_user(u),
             'is_zmiwaka': is_zmiwaka_user(u),
             'is_bar_today': ('B' in code),
+            'lounge': getattr(sh, 'lounge', None),
             'coord_lounge': (coord_lounge if role == 'coordinator' else None),
         })
 
@@ -2472,7 +2493,10 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     with app.app_context():
         ensure_coord_lounge_column()
+        ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
+
 
 
 
