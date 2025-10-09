@@ -2058,6 +2058,201 @@ def upload_pdf_advanced():
     db.session.commit()
     return jsonify({'imported': imported, 'created_users': created_users})
 
+# ===== XLSX schedule import (with colors) =====
+from typing import Optional, Tuple
+from openpyxl import load_workbook
+
+def _rgb_from_openpyxl(color) -> Optional[Tuple[int,int,int]]:
+    """
+    openpyxl color can be theme, indexed, or ARGB like 'FFRRGGBB'/'RRGGBB'.
+    Возвращает (R,G,B) в 0..255 или None.
+    """
+    if not color:
+        return None
+    # try .rgb first
+    rgb = getattr(color, "rgb", None)
+    if rgb:
+        rgb = str(rgb).upper()
+        if len(rgb) == 8:  # AARRGGBB
+            r = int(rgb[2:4], 16); g = int(rgb[4:6], 16); b = int(rgb[6:8], 16)
+            return (r,g,b)
+        if len(rgb) == 6:  # RRGGBB
+            r = int(rgb[0:2], 16); g = int(rgb[2:4], 16); b = int(rgb[4:6], 16)
+            return (r,g,b)
+    # sometimes theme/indexed -> no direct rgb
+    return None
+
+def _is_blue(rgb: Optional[Tuple[int,int,int]]) -> bool:
+    if not rgb: return False
+    r,g,b = rgb
+    return b >= 150 and (b - max(r,g)) >= 30
+
+def _is_black(rgb: Optional[Tuple[int,int,int]]) -> bool:
+    if not rgb: return False
+    r,g,b = rgb
+    return (r+g+b) <= 120  # тёмное/чёрное
+
+def _is_yellow(rgb: Optional[Tuple[int,int,int]]) -> bool:
+    if not rgb: return False
+    r,g,b = rgb
+    return r >= 200 and g >= 180 and b <= 140
+
+def _normalize_code(raw: str) -> Optional[str]:
+    """
+    '1', '2', '1/B', '2/B', '1B', '2B', '1 B', 'X' -> нормализует.
+    Возвращает None если пусто/выходной.
+    """
+    if raw is None: return None
+    s = str(raw).strip().upper().replace(' ', '')
+    if not s or s in {'X','—','-'}:
+        return None
+    if s in {'1','2'}: return s
+    if s in {'1/B','1B'}: return '1/B'
+    if s in {'2/B','2B'}: return '2/B'
+    return None
+
+def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
+    """
+    Возвращает list[dict]: {name, date:'YYYY-MM-DD', shift:'1|2|1/B|2/B', lounge, coord_lounge}
+    lounge: голубой цвет цифры -> 'mazurek', чёрный -> 'polonez'
+    coord_lounge: голубая заливка -> 'mazurek', жёлтая -> 'polonez'
+    """
+    from datetime import date as _date_cls
+
+    wb = load_workbook(io.BytesIO(xlsx_bytes), data_only=True)
+    ws = wb.active  # можно выбрать по имени, если нужно
+
+    # найдём строку заголовка с днями (обычно 1-я): числа 1..31
+    header = [cell.value for cell in ws[1]]
+    day_cols = []
+    for idx, val in enumerate(header):
+        try:
+            d = int(str(val).strip())
+        except Exception:
+            continue
+        if 1 <= d <= 31:
+            day_cols.append((idx+1, d))  # openpyxl is 1-based
+    if not day_cols:
+        # поищем в первых нескольких строках
+        for r in range(1, 6):
+            row = [c.value for c in ws[r]]
+            tmp = []
+            for idx, val in enumerate(row):
+                try:
+                    d = int(str(val).strip())
+                except Exception:
+                    continue
+                if 1 <= d <= 31:
+                    tmp.append((idx+1, d))
+            if len(tmp) >= 10:
+                day_cols = tmp
+                header_row = r
+                break
+        if not day_cols:
+            raise ValueError("Не найдена строка с датами (1..31).")
+    header_row = 1 if 'header_row' not in locals() else header_row
+
+    out = []
+    # строки с сотрудниками начинаются после шапки
+    for row in ws.iter_rows(min_row=header_row+1):
+        name_cell = row[0]
+        full_name = (name_cell.value or "").strip() if name_cell.value else ""
+        if not full_name:
+            continue
+        low = full_name.lower()
+        if low.startswith("plan") or low.startswith("braki") or low.startswith("nazwisko"):
+            continue
+
+        for col_idx, day in day_cols:
+            cell = ws.cell(row=name_cell.row, column=col_idx)
+            code = _normalize_code(cell.value)
+            if not code:
+                continue
+
+            # цвет цифры (font.color) -> lounge
+            font_rgb = _rgb_from_openpyxl(getattr(cell.font, 'color', None))
+            lounge = 'mazurek' if _is_blue(font_rgb) else ('polonez' if _is_black(font_rgb) else None)
+
+            # цвет заливки (fill.start_color) -> координатор
+            fill_rgb = _rgb_from_openpyxl(getattr(cell.fill, 'start_color', None))
+            coord_lounge = None
+            if _is_blue(fill_rgb):
+                coord_lounge = 'mazurek'
+            elif _is_yellow(fill_rgb):
+                coord_lounge = 'polonez'
+
+            out.append({
+                'name': full_name,
+                'date': _date_cls(year, month, day).isoformat(),
+                'shift': code,
+                'lounge': lounge,
+                'coord_lounge': coord_lounge
+            })
+    return out
+
+@app.post('/api/upload-xlsx')
+@jwt_required()
+def upload_xlsx():
+    """Импорт графика из XLSX (цвет цифры -> lounge, цвет заливки -> coord_lounge)."""
+    claims = get_jwt() or {}
+    if (claims.get('role') or '').lower() != 'admin':
+        return jsonify({'error': 'Tylko administrator może przesyłać XLSX.'}), 403
+
+    f = request.files.get('file')
+    year  = int(request.form.get('year') or 0)
+    month = int(request.form.get('month') or 0)
+    if not f or f.filename == '':
+        return jsonify({'error': 'Nie znaleziono pliku (file).'}), 400
+    if not (2000 <= year <= 2100 and 1 <= month <= 12):
+        return jsonify({'error': 'Podaj poprawny rok i miesiąc.'}), 400
+
+    data = f.read()
+    try:
+        rows = parse_schedule_xlsx(data, year, month)
+    except Exception as e:
+        return jsonify({'error': f'Błąd odczytu XLSX: {e}'}), 400
+
+    # подчистим месяц (и зависящие market_offers)
+    first = _date(year, month, 1)
+    last  = _date(year, month, monthrange(year, month)[1])
+    shift_ids = [s.id for s in Shift.query.filter(Shift.shift_date>=first, Shift.shift_date<=last).all()]
+    if shift_ids:
+        MarketOffer.query.filter(MarketOffer.shift_id.in_(shift_ids)).delete(synchronize_session=False)
+        Shift.query.filter(Shift.id.in_(shift_ids)).delete(synchronize_session=False)
+    db.session.commit()
+
+    # users map
+    users_by_key = {_norm(u.full_name): u for u in User.query.all()}
+    imported = 0
+    created_users = []
+
+    for r in rows:
+        name = (r['name'] or '').strip()
+        if not name:
+            continue
+        key = _norm(name)
+        u = users_by_key.get(key)
+        if not u:
+            u = User(full_name=name, role='user')
+            db.session.add(u); db.session.flush()
+            users_by_key[key] = u
+            created_users.append(u.full_name)
+
+        sh = Shift(
+            user_id=u.id,
+            shift_date=r['date'],
+            shift_code=r['shift'],
+            hours=None
+        )
+        # сохраняем lounge/coord_lounge
+        sh.lounge = r.get('lounge') or None
+        sh.coord_lounge = r.get('coord_lounge') or None
+        db.session.add(sh)
+        imported += 1
+
+    db.session.commit()
+    return jsonify({'imported': imported, 'created_users': created_users})
+
 
 @app.post('/api/upload-text')
 @jwt_required()
@@ -2278,6 +2473,7 @@ if __name__ == '__main__':
     with app.app_context():
         ensure_coord_lounge_column()
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
