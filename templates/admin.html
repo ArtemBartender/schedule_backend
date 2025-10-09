@@ -50,26 +50,39 @@
         <label>PDF z grafikiem<br>
           <input type="file" name="file" accept="application/pdf" required />
         </label>
-        <section class="card" style="padding:12px">
-          <h2>Import zmian (PDF)</h2>
-          <form id="upload-form" class="settings-inline" enctype="multipart/form-data">
-            <label>PDF z grafikiem<br>
+        <section class="card" style="padding:16px">
+          <h2 style="margin-bottom:10px">Import zmian (PDF)</h2>
+        
+          <form id="upload-form" enctype="multipart/form-data" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">
+            <label style="display:flex;flex-direction:column;gap:6px">
+              <span>PDF z grafikiem</span>
               <input type="file" name="file" accept="application/pdf" required />
             </label>
         
-            <!-- ⬇️ НОВОЕ: флаг «новый парсер (kolory)» -->
-            <label style="display:flex;align-items:center;gap:8px;margin-left:12px">
-              <input type="checkbox" id="use-advanced" />
-              Użyj nowego parsera (kolory)
+            <label style="display:flex;flex-direction:column;gap:6px">
+              <span>Miesiąc</span>
+              <select id="month-select" required style="min-width:110px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
             </label>
         
-            <button class="btn-secondary" type="submit">Wyślij</button>
-            <div id="upload-msg" class="muted" style="margin-left:auto"></div>
+            <label style="display:flex;flex-direction:column;gap:6px">
+              <span>Rok</span>
+              <select id="year-select" required style="min-width:110px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text)"></select>
+            </label>
+        
+            <label style="display:flex;align-items:center;gap:8px;margin-left:8px">
+              <input type="checkbox" id="use-advanced" />
+              <span>Użyj nowego parsera (kolory)</span>
+            </label>
+        
+            <button class="btn-secondary" type="submit" style="margin-left:auto">Wyślij</button>
+            <div id="upload-msg" class="muted"></div>
           </form>
-          <p class="muted" style="margin-top:6px">
-            * Nowy parser korzysta z kolorów cyfr i tła. Używa wyboru miesiąca/roku z sekcji „Import z tekstu”.
+        
+          <p class="muted" style="margin-top:8px">
+            * Nowy parser czyta kolory cyfr (Mazurek/Polonez) i tło (koordynator Mazurek/Polonez).
           </p>
         </section>
+
 
         <button class="btn-secondary" type="submit">Wyślij</button>
         <div id="upload-msg" class="muted" style="margin-left:auto"></div>
@@ -104,4 +117,5 @@
   <script src="/static/js/admin.js"></script>
 </body>
 </html>
+
 
