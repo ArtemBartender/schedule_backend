@@ -6,11 +6,11 @@
   // меню (если есть)
   if (typeof window.initMenu === 'function') { try{ window.initMenu(); }catch(_){} }
 
-  // -------- helpers --------
+  // ---------- utils ----------
   const $  = (s, r=document) => r.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
 
-  // общий API c токеном (localStorage/sessionStorage)
+  // общий API с токеном
   async function api(url, opts){
     if (typeof window.api === 'function') return await window.api(url, opts||{});
     const headers = new Headers((opts && opts.headers) || {});
@@ -28,14 +28,29 @@
     return body;
   }
 
-  // сегодня
-  const now  = new Date();
-  const iso  = now.toISOString().slice(0,10);
-  const wdPl = new Intl.DateTimeFormat('pl-PL', { weekday:'long' }).format(now);
-  const dPl  = now.toLocaleDateString('pl-PL', { day:'2-digit', month:'2-digit' });
-  const titleEl = $('#today-title'); if (titleEl) titleEl.textContent = `Dziś, ${wdPl} ${dPl}`;
+  // дата «сегодня» по Europe/Warsaw
+  function todayISO_Warsaw(){
+    const s = new Date().toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' });
+    const [d,m,y] = s.split(',')[0].trim().split('.').map(x=>parseInt(x,10));
+    const dt = new Date(Date.UTC(y, m-1, d));
+    const yy = dt.getUTCFullYear();
+    const mm = String(dt.getUTCMonth()+1).padStart(2,'0');
+    const dd = String(dt.getUTCDate()).padStart(2,'0');
+    return `${yy}-${mm}-${dd}`;
+  }
+  const iso = todayISO_Warsaw();
 
-  // claims
+  // заголовок «Dziś, czwartek 09.10»
+  (function setTodayHeader(){
+    try{
+      const d = new Date(iso+'T12:00:00Z');
+      const wdPl = new Intl.DateTimeFormat('pl-PL', { weekday:'long', timeZone:'UTC' }).format(d);
+      const dd   = new Intl.DateTimeFormat('pl-PL', { day:'2-digit', month:'2-digit', timeZone:'UTC' }).format(d);
+      $('#today-title') && ($('#today-title').textContent = `Dziś, ${wdPl} ${dd}`);
+    }catch(_){}
+  })();
+
+  // JWT → claims
   function decodeJWT(t){
     try{ const p=t.split('.')[1]; return JSON.parse(decodeURIComponent(escape(atob(p.replace(/-/g,'+').replace(/_/g,'/'))))); }
     catch(_){ return {}; }
@@ -49,8 +64,8 @@
   const myId   = Number(claims?.sub || claims?.user_id || 0);
   const myName = claims?.full_name || '';
 
-  // заметки может добавлять каждый
-  $('#add-note-wrap').hidden = false;
+  // показать блок добавления заметки
+  $('#add-note-wrap') && ($('#add-note-wrap').hidden = false);
 
   // элементы
   const els = {
@@ -60,34 +75,77 @@
     workTitle: $('#mates-title')       || $('#work-title')
   };
 
+  // человеко-пилюля: ОРЕОЛ по lounge, bar → Polonez (жёлтый), zmywak → серый контур,
+  // бейдж координатора — цвет по coord_lounge
+  function styleAccentByLounge(el, lounge){
+    if (!lounge) return;
+    const l = String(lounge).toLowerCase();
+    if (l === 'mazurek')      el.classList.add('chip-mazurek');   // синий ореол
+    else if (l === 'polonez') el.classList.add('chip-polonez');   // жёлтый ореол
+  }
+  function badge(text, cls){
+    const b = document.createElement('span');
+    b.className = `badge ${cls||''}`;
+    b.textContent = text;
+    return b;
+  }
+  function chip(person){
+    const el = document.createElement('span');
+    el.className = 'person-chip';   // стили такие же, как в календаре
+    el.title = person?.full_name || '';
+
+    // bar?
+    const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
+    const isBar    = person?.is_bar_today ?? looksBar;
+
+    // lounge-акцент: бармен всегда Polonez (жёлтый), иначе по lounge
+    const lounge = (isBar ? 'polonez' : (person?.lounge || '')).toLowerCase();
+    styleAccentByLounge(el, lounge);
+
+    // имя
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = person?.full_name || '';
+    el.appendChild(nm);
+
+    // бейджи
+    if (isBar) el.appendChild(badge('bar','badge-bar'));
+
+    if (person?.is_coordinator){
+      const k = badge('koord.','badge-coord');
+      const cl = (person?.coord_lounge || lounge || '').toLowerCase();
+      if (cl === 'mazurek') { k.classList.add('lounge-mazurek'); }
+      else if (cl === 'polonez') { k.classList.add('lounge-polonez'); }
+      el.appendChild(k);
+    }
+
+    if (person?.is_zmiwaka){
+      el.appendChild(badge('zmywak','badge-zmywak'));
+      // серый контур поверх
+      el.classList.add('chip-zmywak-ring');
+    }
+
+    // код смены (покажем как есть: 1 / 2 / 1/B / 2/B)
+    const codeText = String(person?.shift_code || '').trim();
+    if (codeText){
+      const c = document.createElement('span');
+      c.className = 'badge badge-shift';
+      c.textContent = codeText;
+      el.appendChild(c);
+    }
+
+    return el;
+  }
+
+  // нотации времени
   function timePL(isoStr){
     let s = String(isoStr || '');
-
-    // если пришло "YYYY-MM-DD HH:MM:SS" — нормализуем
     if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) s = s.replace(' ', 'T');
-
-    // если нет смещения/буквы Z — считаем это UTC (добавим Z)
     if (s && !/[zZ]|[+\-]\d{2}:?\d{2}$/.test(s)) s += 'Z';
-
     const d = new Date(s);
     return new Intl.DateTimeFormat('pl-PL', {
       hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'Europe/Warsaw'
     }).format(d);
-  }
-
-
-  // --------- UI helpers ----------
-  function chip(person){
-    const el = document.createElement('span');
-    el.className = 'chip';
-    el.innerHTML = `
-      <span class="chip-name">${esc(person.full_name || '—')}</span>
-      <span class="chip-right">
-        ${person.is_coordinator ? '<span class="badge badge-coord">koord.</span>' : ''}
-        ${person.is_zmiwaka ? '<span class="badge badge-zmiwaka">zmyw.</span>' : ''}
-        ${person.shift_code ? `<span class="code">${esc(person.shift_code)}</span>` : ''}
-      </span>`;
-    return el;
   }
 
   function renderNotes(list){
@@ -97,7 +155,6 @@
       box.innerHTML = '<div class="muted">Brak notatek na dziś.</div>';
       return;
     }
-
     for (const n of list){
       const row = document.createElement('div');
       row.className = 'row between';
@@ -138,14 +195,13 @@
     }
   }
 
-  // ========== Dziś w pracy: Rano/Popo (пилюли) ==========
+  // ======= Dziś w pracy: вкладки Rano/Popo =======
   let dayCache = { morning:[], evening:[] };
   function renderWork(group){
     const box = els.workBox; if (!box) return;
     box.innerHTML = '';
     if (els.workTitle) els.workTitle.textContent = 'Dziś w pracy:';
 
-    // «пилюли» как раньше
     const tabs = document.createElement('div');
     tabs.style.display = 'flex';
     tabs.style.gap = '10px';
@@ -212,7 +268,6 @@
     }
   }
 
-  // ---------- только заметки ----------
   async function loadNotesOnly(){
     try{
       const notes = await api('/api/day-notes?date='+iso);
@@ -222,7 +277,7 @@
     }
   }
 
-  // ---------- добавление заметки ----------
+  // добавление заметки
   async function addNote(){
     const ta = $('#note-input');
     const txt = (ta && ta.value || '').trim();
