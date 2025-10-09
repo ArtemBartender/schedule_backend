@@ -920,3 +920,32 @@ main.container{
 }
 .page-dashboard .chip .
 
+
+
+/* --- Accents for start page chips --- */
+.person-chip {
+  position: relative;
+}
+
+/* тонкий серый контур для zmywak (поверх любых других) */
+.person-chip.chip-zmywak-ring {
+  box-shadow: inset 0 0 0 2px rgba(160,160,165,.65) !important;
+}
+
+/* мягкий «ореол» по лаунжу, как в календаре */
+.person-chip.chip-mazurek {
+  box-shadow: inset 0 0 0 2px rgba(42,110,245,.45);
+}
+.person-chip.chip-polonez {
+  box-shadow: inset 0 0 0 2px rgba(255,214,74,.55);
+}
+
+/* координационный бейдж с указанием лаунжа */
+.badge-coord.lounge-mazurek { background: rgba(42,110,245,.2); border: 1px solid rgba(42,110,245,.6); }
+.badge-coord.lounge-polonez { background: rgba(255,214,74,.22); border: 1px solid rgba(255,214,74,.65); }
+
+/* уже есть у тебя, на всякий случай: */
+.badge-zmiwak, .badge-zmywak { background: rgba(160,160,165,.18); border: 1px solid rgba(160,160,165,.55); }
+.badge-bar { background: rgba(255,214,74,.18); border: 1px solid rgba(255,214,74,.55); }
+
+
