@@ -17,7 +17,6 @@
       return JSON.parse(s);
     }catch(_){ return null; }
   }
-
   const token  = rawToken();
   const claims = token ? parseJwt(token) : null;
   const role   = String(claims?.role || '').toLowerCase();
@@ -25,39 +24,44 @@
   if (!token) { window.location.replace('/'); return; }
   if (role !== 'admin') { window.location.replace('/dashboard'); return; }
 
+  try { if (typeof window.initMenu === 'function') window.initMenu(); } catch(_){}
   const adminLink = document.getElementById('menu-admin');
   if (adminLink) adminLink.hidden = false;
 
-  // ===== top menu (optional) =====
-  try { if (typeof window.initMenu === 'function') window.initMenu(); } catch(_){}
-
-  // ===== Month/Year selects (shared) =====
+  // ===== Month/Year selects (две пары: для XLSX и для текста) =====
   (function buildMonthYear(){
-    const monthSel = document.getElementById('month-select');
-    const yearSel  = document.getElementById('year-select');
-    if (!monthSel || !yearSel) return;
-
     const now  = new Date();
     const curM = now.getMonth() + 1;
     const curY = now.getFullYear();
 
-    monthSel.innerHTML = '';
-    for (let m=1; m<=12; m++){
-      const opt = document.createElement('option');
-      opt.value = String(m);
-      opt.textContent = m.toString().padStart(2,'0');
-      if (m === curM) opt.selected = true;
-      monthSel.appendChild(opt);
-    }
+    const monthIds = ['month-select', 'month-select-text'];
+    const yearIds  = ['year-select', 'year-select-text'];
 
-    yearSel.innerHTML = '';
-    for (let y=curY-1; y<=curY+1; y++){
-      const opt = document.createElement('option');
-      opt.value = String(y);
-      opt.textContent = String(y);
-      if (y === curY) opt.selected = true;
-      yearSel.appendChild(opt);
-    }
+    monthIds.forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      sel.innerHTML = '';
+      for (let m=1; m<=12; m++){
+        const opt = document.createElement('option');
+        opt.value = String(m);
+        opt.textContent = m.toString().padStart(2,'0');
+        if (m === curM) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    });
+
+    yearIds.forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      sel.innerHTML = '';
+      for (let y=curY-1; y<=curY+1; y++){
+        const opt = document.createElement('option');
+        opt.value = String(y);
+        opt.textContent = String(y);
+        if (y === curY) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    });
   })();
 
   // ===== Logout =====
@@ -68,35 +72,29 @@
     window.location.href = '/';
   });
 
-  // ===== PDF upload (classic / advanced) =====
+  // ===== XLSX upload =====
   const uploadForm = document.getElementById('upload-form');
   uploadForm?.addEventListener('submit', async (e)=>{
     e.preventDefault();
     const btn = uploadForm.querySelector('button[type="submit"]');
     const msg = document.getElementById('upload-msg');
-    const useAdv = document.getElementById('use-advanced')?.checked;
 
     const month = Number(document.getElementById('month-select')?.value || 0);
     const year  = Number(document.getElementById('year-select')?.value  || 0);
 
-    btn.disabled = true;
     msg.textContent = '';
+    btn.disabled = true;
 
     try{
-      const fd = new FormData(uploadForm); // <-- ВАЖНО: собрать файл
-
-      let url = '/api/upload-pdf';
-      if (useAdv){
-        if (!(month>=1 && month<=12) || !(year>=2000 && year<=2100)){
-          msg.textContent = 'Wybierz prawidłowy miesiąc i rok.';
-          return;
-        }
-        fd.append('month', String(month));
-        fd.append('year',  String(year));
-        url = '/api/upload-pdf-adv';
+      if (!(month>=1 && month<=12) || !(year>=2000 && year<=2100)){
+        msg.textContent = 'Wybierz prawidłowy miesiąc i rok.';
+        return;
       }
+      const fd = new FormData(uploadForm);           // берём файл .xlsx
+      fd.append('month', String(month));
+      fd.append('year',  String(year));
 
-      const res = await fetch(url, {
+      const res = await fetch('/api/upload-xlsx', {  // <-- ЭТОТ ЭНДПОИНТ на бэке
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + token },
         body: fd
@@ -109,13 +107,13 @@
         (Array.isArray(data.created_users) ? `, nowych użytkowników: ${data.created_users.length}` : '');
 
     }catch(err){
-      msg.textContent = err?.error || err?.message || 'Błąd importu';
+      msg.textContent = err?.error || err?.message || 'Błąd importu XLSX';
     }finally{
       btn.disabled = false;
     }
   });
 
-  // ===== Paste text import =====
+  // ===== Import z tekstu (fallback) =====
   const pasteForm = document.getElementById('paste-form');
   pasteForm?.addEventListener('submit', async (e)=>{
     e.preventDefault();
@@ -123,8 +121,8 @@
     const msg = document.getElementById('paste-msg');
 
     const text  = (pasteForm.text?.value || '').trim();
-    const month = Number(document.getElementById('month-select')?.value || 0);
-    const year  = Number(document.getElementById('year-select')?.value  || 0);
+    const month = Number(document.getElementById('month-select-text')?.value || 0);
+    const year  = Number(document.getElementById('year-select-text')?.value  || 0);
 
     if (!text){ msg.textContent = 'Wklej tekst.'; return; }
     if (!(month>=1 && month<=12) || !(year>=2000 && year<=2100)){
@@ -135,7 +133,6 @@
     msg.textContent = '';
 
     try{
-      // Если у тебя есть window.api — можно через него
       if (typeof window.api === 'function'){
         const data = await window.api('/api/upload-text', {
           method: 'POST',
@@ -159,7 +156,7 @@
           (Array.isArray(data.created_users) ? `, nowych użytkowników: ${data.created_users.length}` : '');
       }
     }catch(err){
-      msg.textContent = err?.error || err?.message || 'Błąd importu';
+      msg.textContent = err?.error || err?.message || 'Błąd importu tekstu';
     }finally{
       btn.disabled = false;
     }
