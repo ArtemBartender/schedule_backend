@@ -365,7 +365,7 @@
     const left = createEl('div','name');
     left.textContent = s.full_name || '—';
     if (s.is_coordinator) left.classList.add('coordinator');
-    if (s.is_zmiwaka) left.classList.add('zmiwaka');
+    if (s.is_zmiwaka) left.classList.add('zmywak');
 
     const right = createEl('div','code');
     right.textContent = s.shift_code || '';
@@ -701,3 +701,4 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
     if (document.visibilityState === 'visible') ping();
   });
 })();
+
