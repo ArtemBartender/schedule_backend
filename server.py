@@ -11,7 +11,7 @@ from flask import send_file
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from datetime import date as _date
 from datetime import date
 from sqlalchemy.exc import IntegrityError
@@ -802,6 +802,7 @@ def day_shifts():
         return jsonify({'error': 'Nieprawidłowa data.'}), 400
 
     backend = db.engine.url.get_backend_name()
+
     base_q = Shift.query.join(User).filter(Shift.shift_date == d)
     if backend.startswith('postgresql'):
         q = base_q.order_by(User.order_index.asc().nulls_last(), User.full_name.asc())
@@ -817,15 +818,16 @@ def day_shifts():
 
     def is_evening(code: str) -> bool:
         return (code or '').strip().upper().startswith('2')
+
     def is_morning(code: str) -> bool:
         return (code or '').strip().upper().startswith('1')
 
     morning, evening = [], []
-    for s in rows:
+    for s in rows:                       # <-- важное: тут именно s, НЕ sh
         u = s.user
         role = (getattr(u, 'role', '') or '').lower()
         code = (s.shift_code or '').upper()
-        coord_lounge = getattr(s, 'coord_lounge', None)  # ← защит
+
         item = {
             'user_id': u.id if u else None,
             'full_name': (u.full_name if u else None),
@@ -835,15 +837,18 @@ def day_shifts():
             'is_coordinator': is_coordinator_user(u),
             'is_zmiwaka': is_zmiwaka_user(u),
             'is_bar_today': ('B' in code),
-            'lounge': getattr(sh, 'lounge', None),
-            'coord_lounge': (coord_lounge if role == 'coordinator' else None),
+            # если в таблице нет колонки lounge — вернётся None, это ок
+            'lounge': getattr(s, 'lounge', None),
+            'coord_lounge': (getattr(s, 'coord_lounge', None) if role == 'coordinator' else None),
         }
+
         if is_evening(s.shift_code):
             evening.append(item)
         elif is_morning(s.shift_code):
             morning.append(item)
 
     return jsonify({'date': d.isoformat(), 'morning': morning, 'evening': evening})
+
 
 @app.get('/api/month-shifts')
 @jwt_required()
@@ -2544,6 +2549,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
