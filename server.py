@@ -2140,53 +2140,69 @@ def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
     coord_lounge: голубая заливка -> 'mazurek', жёлтая -> 'polonez'
     """
     from datetime import date as _date_cls
+    from calendar import monthrange
 
     wb = load_workbook(io.BytesIO(xlsx_bytes), data_only=True)
-    ws = wb.active  # можно выбрать по имени, если нужно
+    ws = wb.active
 
-    # найдём строку заголовка с днями (обычно 1-я): числа 1..31
-    header = [cell.value for cell in ws[1]]
-    day_cols = []
-    for idx, val in enumerate(header):
-        try:
-            d = int(str(val).strip())
-        except Exception:
-            continue
-        if 1 <= d <= 31:
-            day_cols.append((idx+1, d))  # openpyxl is 1-based
+    # --- 1) найдём строку с заголовками дней (1..31) ---
+    header_row = None
+    day_cols: list[tuple[int,int]] = []  # [(col_idx_1based, day)]
+    # пробуем первые 5 строк
+    for r in range(1, 6):
+        row_vals = [c.value for c in ws[r]]
+        tmp = []
+        for j, val in enumerate(row_vals, start=1):  # 1-based
+            try:
+                d = int(str(val).strip())
+            except Exception:
+                continue
+            if 1 <= d <= 31:
+                tmp.append((j, d))
+        if len(tmp) >= 8:  # разумный минимум для строки дат
+            header_row = r
+            day_cols = tmp
+            break
     if not day_cols:
-        # поищем в первых нескольких строках
-        for r in range(1, 6):
-            row = [c.value for c in ws[r]]
-            tmp = []
-            for idx, val in enumerate(row):
-                try:
-                    d = int(str(val).strip())
-                except Exception:
-                    continue
-                if 1 <= d <= 31:
-                    tmp.append((idx+1, d))
-            if len(tmp) >= 10:
-                day_cols = tmp
-                header_row = r
-                break
-        if not day_cols:
-            raise ValueError("Не найдена строка с датами (1..31).")
-    header_row = 1 if 'header_row' not in locals() else header_row
+        raise ValueError("Не найдена строка с датами (1..31).")
+
+    # --- 1b) если в шапке все дни одинаковые/сломанные — назначаем по порядку ---
+    days_in_month = monthrange(year, month)[1]
+    uniq = {d for _, d in day_cols}
+    if len(uniq) <= max(1, len(day_cols)//4):  # грубый критерий «подозрительно мало»
+        # берём только первые N столбцов = число дней в месяце
+        day_cols = [(col_idx, i+1) for i, (col_idx, _) in enumerate(day_cols[:days_in_month])]
+
+    # на всякий случай отфильтруем дни > фактических
+    day_cols = [(c, d) for (c, d) in day_cols if 1 <= d <= days_in_month]
+    if not day_cols:
+        raise ValueError("В шапке нет корректных чисел дней для указанного месяца.")
 
     out = []
-    # строки с сотрудниками начинаются после шапки
+
+    # --- 2) разбираем строки сотрудников ---
     for row in ws.iter_rows(min_row=header_row+1):
         name_cell = row[0]
         full_name = (name_cell.value or "").strip() if name_cell.value else ""
         if not full_name:
             continue
         low = full_name.lower()
-        if low.startswith("plan") or low.startswith("braki") or low.startswith("nazwisko"):
+        if low.startswith(("plan", "braki", "nazwisko")):
             continue
 
         for col_idx, day in day_cols:
             cell = ws.cell(row=name_cell.row, column=col_idx)
+
+            # нормализуем код смены
+            def _normalize_code(raw):
+                if raw is None: return None
+                s = str(raw).strip().upper().replace(' ', '')
+                if not s or s in {'X','—','-'}: return None
+                if s in {'1','2'}: return s
+                if s in {'1/B','1B'}: return '1/B'
+                if s in {'2/B','2B'}: return '2/B'
+                return None
+
             code = _normalize_code(cell.value)
             if not code:
                 continue
@@ -2197,11 +2213,7 @@ def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
 
             # цвет заливки (fill.start_color) -> координатор
             fill_rgb = _rgb_from_openpyxl(getattr(cell.fill, 'start_color', None))
-            coord_lounge = None
-            if _is_blue(fill_rgb):
-                coord_lounge = 'mazurek'
-            elif _is_yellow(fill_rgb):
-                coord_lounge = 'polonez'
+            coord_lounge = 'mazurek' if _is_blue(fill_rgb) else ('polonez' if _is_yellow(fill_rgb) else None)
 
             out.append({
                 'name': full_name,
@@ -2210,7 +2222,9 @@ def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
                 'lounge': lounge,
                 'coord_lounge': coord_lounge
             })
+
     return out
+
 
 @app.post('/api/upload-xlsx')
 @jwt_required()
@@ -2530,6 +2544,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
