@@ -2233,41 +2233,66 @@ def upload_xlsx():
     except Exception as e:
         return jsonify({'error': f'Błąd odczytu XLSX: {e}'}), 400
 
-    # подчистим месяц (и зависящие market_offers)
+    # --- Очистка только выбранного месяца (сначала market_offers, затем shifts)
     first = _date(year, month, 1)
     last  = _date(year, month, monthrange(year, month)[1])
-    shift_ids = [s.id for s in Shift.query.filter(Shift.shift_date>=first, Shift.shift_date<=last).all()]
-    if shift_ids:
-        MarketOffer.query.filter(MarketOffer.shift_id.in_(shift_ids)).delete(synchronize_session=False)
-        Shift.query.filter(Shift.id.in_(shift_ids)).delete(synchronize_session=False)
-    db.session.commit()
 
-    # users map
+    db.session.execute(sqltext("""
+        DELETE FROM market_offers
+        WHERE shift_id IN (
+          SELECT id FROM shifts
+          WHERE shift_date BETWEEN :d1 AND :d2
+        )
+    """), {'d1': first, 'd2': last})
+
+    db.session.execute(sqltext("""
+        DELETE FROM shifts
+        WHERE shift_date BETWEEN :d1 AND :d2
+    """), {'d1': first, 'd2': last})
+
+    db.session.flush()
+
+    # --- Подготовка пользователей
     users_by_key = {_norm(u.full_name): u for u in User.query.all()}
     imported = 0
     created_users = []
 
+    # Защита от дублей в рамках ОДНОГО файла: (user_id, date)
+    seen_pairs = set()
+
     for r in rows:
-        name = (r['name'] or '').strip()
+        name = (r.get('name') or '').strip()
         if not name:
             continue
+
         key = _norm(name)
         u = users_by_key.get(key)
         if not u:
             u = User(full_name=name, role='user')
-            db.session.add(u); db.session.flush()
+            db.session.add(u)
+            db.session.flush()
             users_by_key[key] = u
             created_users.append(u.full_name)
 
+        d_iso = r.get('date')  # 'YYYY-MM-DD'
+        if not d_iso:
+            continue
+
+        pair = (u.id, d_iso)
+        if pair in seen_pairs:
+            # дубль этой же смены в файле — пропускаем
+            continue
+        seen_pairs.add(pair)
+
         sh = Shift(
             user_id=u.id,
-            shift_date=r['date'],
-            shift_code=r['shift'],
+            shift_date=d_iso,
+            shift_code=r.get('shift') or '',
             hours=None
         )
-        # сохраняем lounge/coord_lounge
-        sh.lounge = r.get('lounge') or None
+        # сохраняем только coord_lounge (колонка существует)
         sh.coord_lounge = r.get('coord_lounge') or None
+
         db.session.add(sh)
         imported += 1
 
@@ -2501,6 +2526,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
