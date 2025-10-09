@@ -18,59 +18,23 @@
         if(!r.ok){ const e=new Error(b?.error||('HTTP '+r.status)); e.status=r.status; throw e; } return b;
       }));
 
-
-  function chipClassFor(person) {
-    const isCoord = !!person?.is_coordinator;
-    const isZmiwak = !!person?.is_zmiwaka;
-    // fallback: если бек ещё не шлёт is_bar_today — определяем по коду (1/B, 2/B, B)
-    const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
-    const isBar    = person?.is_bar_today ?? looksBar;
-
-    if (isCoord) {
-      const lounge = person?.coord_lounge; // 'mazurek' | 'polonez' | undefined
-      return lounge === 'polonez' ? 'chip-coord chip-coord-polonez'
-           : lounge === 'mazurek' ? 'chip-coord chip-coord-mazurek'
-           : 'chip-coord';
-    }
-    if (isZmiwak) return 'chip-zmiwak';
-    if (isBar)    return 'chip-bar';
-    return ''; // обычный
-  }
-
-
-  
   // ---- Time helpers (Europe/Warsaw) ----
   function warsawTodayUTC(){
-    // "DD.MM.YYYY, HH:MM:SS" в Europe/Warsaw -> UTC-дата (без времени)
     const s = new Date().toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' });
     const left = s.split(',')[0].trim();
     const parts = left.split('.');
     const d = parseInt(parts[0],10), m = parseInt(parts[1],10), y = parseInt(parts[2],10);
     return new Date(Date.UTC(y, m-1, d));
   }
-  function warsawTomorrowUTC(){
-    const t = warsawTodayUTC();
-    t.setUTCDate(t.getUTCDate() + 1);
-    return t;
-  }
-  function isoToUTCDate(iso /* YYYY-MM-DD */){
-    const [Y,M,D] = String(iso||'').split('-').map(Number);
-    if (!Y || !M || !D) return new Date(NaN);
-    return new Date(Date.UTC(Y, M-1, D));
-  }
-  function isBeforeTomorrowWarsawISO(iso){
-    return isoToUTCDate(iso) < warsawTomorrowUTC();
-  }
+  function warsawTomorrowUTC(){ const t = warsawTodayUTC(); t.setUTCDate(t.getUTCDate() + 1); return t; }
+  function isoToUTCDate(iso){ const [Y,M,D] = String(iso||'').split('-').map(Number); return new Date(Date.UTC(Y, M-1, D)); }
+  function isBeforeTomorrowWarsawISO(iso){ return isoToUTCDate(iso) < warsawTomorrowUTC(); }
 
   const WD     = new Intl.DateTimeFormat('pl-PL', { weekday: 'short' });
   const DD     = new Intl.DateTimeFormat('pl-PL', { day: '2-digit' });
   const MM     = new Intl.DateTimeFormat('pl-PL', { month: '2-digit' });
   const MTITLE = new Intl.DateTimeFormat('pl-PL', { month: 'long', year: 'numeric' });
-
-  const isoLocal = d => {
-    const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
-    return `${y}-${m}-${day}`;
-  };
+  const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const codeGroup = code => String(code||'').trim().startsWith('2') ? '2' : '1';
 
   // ---------- state ----------
@@ -81,40 +45,80 @@
   let baseMonth = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
   let showPast  = false;
 
-  // мои смены для проверок
+  // мои смены
   let MY_MAP = new Map();
   async function loadMyShifts(){
-    try {
-      const arr = await api('/api/my-shifts', { method:'GET' });
-      MY_MAP = new Map((arr||[]).map(s => [s.shift_date, s]));
-    } catch { MY_MAP = new Map(); }
+    try { const arr = await api('/api/my-shifts', { method:'GET' }); MY_MAP = new Map((arr||[]).map(s => [s.shift_date, s])); }
+    catch { MY_MAP = new Map(); }
   }
   const iWorkThatDay = iso => MY_MAP.has(iso);
 
-  // ---------- UI helpers ----------
+  // ========= Chips =========
+  function styleAccentByLounge(el, lounge){
+    // Мягкий "ореол" по лаунжу
+    if (lounge === 'mazurek') {
+      el.style.boxShadow = 'inset 0 0 0 2px rgba(42,110,245,.45)';
+    } else if (lounge === 'polonez') {
+      el.style.boxShadow = 'inset 0 0 0 2px rgba(255,214,74,.55)';
+    }
+  }
+  function badge(text, cls){
+    const b = document.createElement('span');
+    b.className = `badge ${cls||''}`;
+    b.textContent = text;
+    return b;
+  }
   function chip(person, isoDate) {
+    // person: { full_name, shift_code, is_coordinator, coord_lounge, lounge, is_bar_today, is_zmiwaka }
     const el = document.createElement('span');
-
-    const cls = chipClassFor(person);
-    el.className = `person-chip ${cls}`;
+    el.className = 'person-chip';
     el.title = person?.full_name || '';
 
-    el.innerHTML = `
-      <span class="name">${esc(person?.full_name || '')}</span>
-      ${person?.is_coordinator
-        ? `<span class="badge badge-coord${person?.coord_lounge ? (' lounge-' + person.coord_lounge) : ''}">koord.</span>`
-        : ''}
-      ${person?.is_zmiwaka ? `<span class="badge badge-zmiwak">zmywak</span>` : ''}
-      ${person?.shift_code ? `<span class="badge badge-shift">${esc(person.shift_code)}</span>` : ''}
-    `;
+    // текущее место работы (по цифре цвета) — lounge
+    const lounge = (person?.lounge || '').toLowerCase();
+    styleAccentByLounge(el, lounge);
 
-    // клик — панель действий снизу дня
+    // имя
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = person?.full_name || '';
+    el.appendChild(nm);
+
+    // бейджи
+    // bar?
+    const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
+    const isBar = person?.is_bar_today ?? looksBar;
+    if (isBar) el.appendChild(badge('bar','badge-bar'));
+
+    // координатор?
+    if (person?.is_coordinator){
+      const k = badge('koord.','badge-coord');
+      const cl = (person?.coord_lounge || lounge || '').toLowerCase();
+      if (cl === 'mazurek') { k.classList.add('lounge-mazurek'); }
+      else if (cl === 'polonez') { k.classList.add('lounge-polonez'); }
+      el.appendChild(k);
+    }
+
+    // змывак?
+    if (person?.is_zmiwaka){
+      el.appendChild(badge('zmywak','badge-zmiwak'));
+    }
+
+    // код: показываем 1/2 (без /B)
+    const codeText = String(person?.shift_code || '').replace(/\s+/g,'').replace('/B','').replace('B','');
+    if (codeText){
+      const c = document.createElement('span');
+      c.className = 'badge badge-shift';
+      c.textContent = codeText;
+      el.appendChild(c);
+    }
+
+    // клик — панель действий
     el.addEventListener('click', (e) => { e.stopPropagation(); showActionsUnderDay(isoDate, person); });
     return el;
   }
 
-
-  // было: function colBlock(label, people, isoDate) {
+  // ========= Колонки =========
   function colBlock(label, people, isoDate, group) {
     const wrap = document.createElement('div');
     wrap.className = `day-col shift-group group--${group}`;
@@ -141,7 +145,7 @@
     return wrap;
   }
 
-
+  // ========= День =========
   function dayRow(iso, data, isToday) {
     const d = new Date(iso + 'T12:00:00');
     const row = document.createElement('div');
@@ -166,8 +170,8 @@
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = '1fr';
     grid.style.gap = '8px';
-    grid.appendChild(colBlock('Rano',   data.morning || [], iso, 'morning'));
-    grid.appendChild(colBlock('Popo',   data.evening || [], iso, 'evening'));
+    grid.appendChild(colBlock('Rano', data.morning || [], iso, 'morning'));
+    grid.appendChild(colBlock('Popo', data.evening || [], iso, 'evening'));
 
     right.appendChild(grid);
 
@@ -180,7 +184,7 @@
 
     row.appendChild(flex);
 
-    // слот для действий — ВСЕГДА внизу карточки дня
+    // слот для действий
     const actionsSlot = document.createElement('div');
     actionsSlot.className = 'day-actions-slot';
     actionsSlot.style.cssText = 'margin-top:8px; display:block; width:100%;';
@@ -189,9 +193,9 @@
     return row;
   }
 
-  // панель действий внизу
+  // ========= Панель действий =========
   function showActionsUnderDay(iso, person){
-    $$('.day-actions').forEach(a => a.remove()); // только одна панель
+    $$('.day-actions').forEach(a => a.remove());
 
     const row = document.querySelector(`[data-day-row="${iso}"]`);
     if (!row) return;
@@ -221,11 +225,7 @@
     btnSwap.addEventListener('click', ()=> openPickMyDateModal({ isoTheir: iso, person }));
 
     btnTake.addEventListener('click', async ()=> {
-      // запрет «взять» сегодня/прошлое
-      if (isBeforeTomorrowWarsawISO(iso)){
-        alert('Tej zmiany nie można wziąć (przeszłość / dzisiaj).');
-        return;
-      }
+      if (isBeforeTomorrowWarsawISO(iso)){ alert('Tej zmiany nie można wziąć (przeszłość / dzisiaj).'); return; }
       if (iWorkThatDay(iso)){ alert('W tym dniu już masz zmianę.'); return; }
       try{
         await api('/api/takeovers', { method:'POST', body: JSON.stringify({ target_user_id: person.user_id, date: iso }) });
@@ -242,9 +242,8 @@
     wrap.scrollIntoView({behavior:'smooth', block:'nearest'});
   }
 
-  // выбор моей смены для замены (строчный «календарь»)
+  // ========= Модал выбора моей смены =========
   function openPickMyDateModal({ isoTheir, person }){
-    // показываем только от завтра (Europe/Warsaw)
     const tomo = warsawTomorrowUTC();
     const myList = Array
       .from(MY_MAP.values())
@@ -252,12 +251,10 @@
       .sort((a,b)=> a.shift_date.localeCompare(b.shift_date));
 
     const allow = (my) => {
-      // в этот же день — можно, только если группы разные (1↔2)
       if (my.shift_date === isoTheir){
         const gMy = codeGroup(my.shift_code), gTheir = codeGroup(person.shift_code);
         return gMy !== gTheir;
       }
-      // в другой день — ок (мы уже отфильтровали < завтра)
       return true;
     };
 
@@ -306,9 +303,8 @@
     });
   }
 
-  // ---------- bulk helpers ----------
+  // ========= Bulk загрузка/рендер месяца =========
   function monthKey(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
-
   async function fetchMonthBulk(d){
     const y = d.getFullYear(), m = d.getMonth()+1;
     const key = 'monthCache:'+y+'-'+String(m).padStart(2,'0');
@@ -316,7 +312,7 @@
       const cached = sessionStorage.getItem(key);
       if (cached){
         const { ts, data } = JSON.parse(cached);
-        if (Date.now() - ts < 120*1000) return data; // 120 сек кэш
+        if (Date.now() - ts < 120*1000) return data;
       }
     }catch(_){}
     const data = await api(`/api/month-shifts?year=${y}&month=${m}`, { method:'GET' });
@@ -324,7 +320,6 @@
     return data;
   }
 
-  // подпись для кнопки "Pokaż/Ukryj przeszłe"
   function updatePastBtn() {
     const btn = $('#toggle-past');
     if (!btn) return;
@@ -332,58 +327,34 @@
     btn.setAttribute('aria-pressed', String(showPast));
   }
 
-  // ---------- рендер месяца (bulk) ----------
   async function renderMonthLadder() {
     daysRoot.innerHTML = '';
 
     const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1, 12, 0, 0, 0);
     const monthEnd   = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0, 12, 0, 0, 0);
 
-    // заголовок месяца
     const title = MTITLE.format(monthStart);
     if (monthTitle) monthTitle.textContent = title.charAt(0).toUpperCase() + title.slice(1);
 
-    // стартовая видимая дата: с сегодняшнего, если прошлые скрыты
     let startDate = showPast ? new Date(monthStart) : new Date(Math.max(monthStart.getTime(), TODAY.getTime()));
+    if (startDate > monthEnd) { showPast = true; updatePastBtn(); startDate = new Date(monthStart); }
 
-    // если месяц полностью в прошлом и прошлые скрыты — покажем весь месяц
-    if (startDate > monthEnd) {
-      showPast = true;
-      updatePastBtn();
-      startDate = new Date(monthStart);
-    }
-
-    // список iso ТОЛЬКО внутри месяца (и с учётом скрытия прошлого)
     const isoList = [];
-    for (let d = new Date(startDate); d <= monthEnd; d.setDate(d.getDate() + 1)) {
-      isoList.push(isoLocal(d));
-    }
-
+    for (let d = new Date(startDate); d <= monthEnd; d.setDate(d.getDate() + 1)) isoList.push(isoLocal(d));
     if (!isoList.length){
-      const stub = document.createElement('div');
-      stub.className = 'muted';
-      stub.style.padding = '12px';
-      stub.textContent = 'Brak dni do wyświetlenia w tym miesiącu.';
-      daysRoot.appendChild(stub);
-      return;
+      const stub = document.createElement('div'); stub.className='muted'; stub.style.padding='12px'; stub.textContent='Brak dni do wyświetlenia w tym miesiącu.'; daysRoot.appendChild(stub); return;
     }
 
-    // быстрый "скелет" (моментально)
     const frag = document.createDocumentFragment();
     isoList.forEach(iso => {
       const row = dayRow(iso, { morning:[], evening:[] }, iso === isoLocal(TODAY));
-      const holder = document.createElement('div');
-      holder.className = 'muted';
-      holder.textContent = 'Ładowanie…';
-      row.appendChild(holder);
-      frag.appendChild(row);
+      const holder = document.createElement('div'); holder.className = 'muted'; holder.textContent = 'Ładowanie…';
+      row.appendChild(holder); frag.appendChild(row);
     });
     daysRoot.appendChild(frag);
 
-    // загрузка месяца одним запросом (с кешем)
     const monthData = await fetchMonthBulk(baseMonth);
 
-    // плавная подстановка чанками (без фризов)
     let i = 0;
     function step(){
       const t0 = performance.now();
@@ -406,23 +377,10 @@
   }
 
   // ---------- controls ----------
-  $('#prev-month')?.addEventListener('click', () => {
-    baseMonth = new Date(baseMonth.getFullYear(), baseMonth.getMonth() - 1, 1);
-    renderMonthLadder();
-  });
-  $('#next-month')?.addEventListener('click', () => {
-    baseMonth = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 1);
-    renderMonthLadder();
-  });
-  $('#jump-today')?.addEventListener('click', () => {
-    baseMonth = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
-    renderMonthLadder();
-  });
-  $('#toggle-past')?.addEventListener('click', () => {
-    showPast = !showPast;
-    updatePastBtn();
-    renderMonthLadder();
-  });
+  $('#prev-month')?.addEventListener('click', () => { baseMonth = new Date(baseMonth.getFullYear(), baseMonth.getMonth() - 1, 1); renderMonthLadder(); });
+  $('#next-month')?.addEventListener('click', () => { baseMonth = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 1); renderMonthLadder(); });
+  $('#jump-today')?.addEventListener('click', () => { baseMonth = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1); renderMonthLadder(); });
+  $('#toggle-past')?.addEventListener('click', () => { showPast = !showPast; updatePastBtn(); renderMonthLadder(); });
 
   // ---------- start ----------
   (async () => {
@@ -432,4 +390,3 @@
   })();
 
 })();
-
