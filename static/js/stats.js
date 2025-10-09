@@ -1,311 +1,279 @@
-// ===== Statystyka — pełny moduł z listą moich zmian na dole =====
-(async function () {
-  if (!document.body.classList.contains('page-stats')) return;
+// static/js/start.js
+(function initStart(){
+  'use strict';
+  if (!document.body.classList.contains('page-start')) return;
 
-  // Init menu
-  if (typeof initMenu === 'function') initMenu();
+  // меню (если есть)
+  if (typeof window.initMenu === 'function') { try{ window.initMenu(); }catch(_){} }
 
-  // --- helpers ---
+  // -------- helpers --------
   const $  = (s, r=document) => r.querySelector(s);
-  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
-  const state = { ym: new Date() }; // bieżący miesiąc
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
 
-  // nagłówek miesiąca + nawigacja
-  const titleEl = $('#stats-title');
-  const prevBtn = $('#stats-prev');
-  const nextBtn = $('#stats-next');
+  // общий API c токеном
+  async function api(url, opts){
+    if (typeof window.api === 'function') return await window.api(url, opts||{});
+    const headers = new Headers((opts && opts.headers) || {});
+    if (opts && opts.body && !(opts.body instanceof FormData) && !headers.has('Content-Type')){
+      headers.set('Content-Type','application/json');
+    }
+    const t = (window.getToken ? window.getToken() :
+               (localStorage.getItem('access_token') || sessionStorage.getItem('access_token')));
+    if (t) headers.set('Authorization','Bearer '+t);
 
-  // KPI
-  const kDone    = $('#kpi-done');
-  const kLeft    = $('#kpi-left');
-  const kNetDone = $('#kpi-net-done');
-  const kNetAll  = $('#kpi-net-all');
-  const barsWrap = $('#stats-bars');
-
-  // ustawienia stawek
-  const rateInput = $('#rate-input');
-  const taxInput  = $('#tax-input');
-  const saveBtn   = $('#save-settings');
-
-  // stare pola nadgodzin — скрываем, логика оставлена (редактор открываем из списка)
-  const otSelect  = $('#ot-shift-select');
-  const otEditBtn = $('#ot-edit-btn');
-  const otSummary = $('#ot-summary');
-  if (otSelect)  otSelect.closest('.card')?.classList.add('hidden');
-  if (otEditBtn) otEditBtn.closest('div')?.classList.add('hidden');
-  if (otSummary) otSummary.textContent = '';
-
-  // контейнер для списка смен (создаём, если нет в вёрстке)
-  let myList = $('#my-shifts-list');
-  if (!myList) {
-    const sec = document.createElement('section');
-    sec.className = 'card';
-    sec.style.padding = '12px';
-    sec.style.marginTop = '12px';
-    sec.innerHTML = `
-      <h3 style="margin:0 0 8px">Moje zmiany w tym miesiącu</h3>
-      <div id="my-shifts-list"></div>`;
-    $('.container')?.appendChild(sec);
-    myList = $('#my-shifts-list');
+    const res = await fetch(url, Object.assign({cache:'no-store', headers}, opts||{}));
+    const ct  = res.headers.get('content-type')||'';
+    const body= ct.includes('application/json') ? await res.json().catch(()=>({})) : await res.text().catch(()=> '');
+    if (!res.ok){ const err=new Error(body?.error || ('Błąd '+res.status)); err.status=res.status; throw err; }
+    return body;
   }
 
-  const ymStr   = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-  const fmtPL   = (d) => new Intl.DateTimeFormat('pl-PL', {month:'long', year:'numeric'}).format(d).replace(/^./, c=>c.toUpperCase());
-  const fmtDate = (iso) => new Intl.DateTimeFormat('pl-PL',{day:'2-digit',month:'2-digit'}).format(new Date(iso+'T12:00:00'));
-  const pln     = (n)=> (n||0).toLocaleString('pl-PL',{minimumFractionDigits:2,maximumFractionDigits:2})+' zł';
+  // сегодня
+  const now  = new Date();
+  const iso  = now.toISOString().slice(0,10);
+  const wdPl = new Intl.DateTimeFormat('pl-PL', { weekday:'long' }).format(now);
+  const dPl  = now.toLocaleDateString('pl-PL', { day:'2-digit', month:'2-digit' });
+  const titleEl = $('#today-title'); if (titleEl) titleEl.textContent = `Dziś, ${wdPl} ${dPl}`;
 
-  async function apiJSON(url, opts={}) {
-    // используем глобальный api() если есть (с ретраями), иначе обычный fetch
-    if (typeof window.api === 'function') return await window.api(url, opts);
-    const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
-    if (typeof getToken==='function') headers['Authorization'] = 'Bearer ' + getToken();
-    const res = await fetch(url, Object.assign({}, opts, { headers }));
-    const data = await res.json().catch(()=> ({}));
-    if (!res.ok) throw (data || {error:`HTTP ${res.status}`});
-    return data;
+  // claims
+  function decodeJWT(t){
+    try{ const p=t.split('.')[1]; return JSON.parse(decodeURIComponent(escape(atob(p.replace(/-/g,'+').replace(/_/g,'/'))))); }
+    catch(_){ return {}; }
+  }
+  function currentClaims(){
+    if (typeof window.currentClaims === 'function') return window.currentClaims() || {};
+    const tok = (localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || '');
+    return tok ? decodeJWT(tok) : {};
+  }
+  const claims = currentClaims();
+  const myId   = Number(claims?.sub || claims?.user_id || 0);
+  const myName = claims?.full_name || '';
+
+  // заметки может добавлять каждый
+  $('#add-note-wrap').hidden = false;
+
+  // элементы
+  const els = {
+    shiftBox:  $('#today-shift')       || $('#today-shift-status'),
+    workBox:   $('#mates-list')        || $('#today-colleagues'),
+    notesBox:  $('#notes-list')        || $('#today-notes'),
+    workTitle: $('#mates-title')       || $('#work-title')
+  };
+
+  function timePL(isoStr){
+    let s = String(isoStr || '');
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) s = s.replace(' ', 'T');
+    if (s && !/[zZ]|[+\-]\d{2}:?\d{2}$/.test(s)) s += 'Z';
+    const d = new Date(s);
+    return new Intl.DateTimeFormat('pl-PL', {
+      hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'Europe/Warsaw'
+    }).format(d);
   }
 
-  function setMonthTitle(){ if (titleEl) titleEl.textContent = fmtPL(state.ym); }
+  // --------- UI helpers ----------
+  function chip(person){
+    // нормализуем данные смены
+    const lounge   = String(person?.lounge || '').toLowerCase();          // по цвету цифры
+    const coordL   = String(person?.coord_lounge || '').toLowerCase();    // по заливке — это и есть «koord na dziś»
+    const isCoord  = !!coordL;                                            // показываем «koord.» только если ЕСТЬ coord_lounge!
+    const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
+    const isBar    = person?.is_bar_today ?? looksBar;
+    const isZmywak = !!person?.is_zmiwaka;
 
-  // ===== KPI / słupki
-  function renderBars(daily){
-    barsWrap.innerHTML = '';
-    if (!daily?.length){ barsWrap.innerHTML = '<div class="muted">Brak danych</div>'; return; }
-    const maxH = Math.max(...daily.map(d => d.hours||0), 1);
-    const wrap = document.createElement('div'); wrap.className = 'bars';
-    daily.forEach(d=>{
-      const b = document.createElement('div');
-      b.className = 'bar' + (d.done ? ' done' : '');
-      b.style.height = (d.hours / maxH * 100) + '%';
-      b.setAttribute('data-tip', `${d.date} • ${d.hours}h`);
-      wrap.appendChild(b);
+    const el = document.createElement('span');
+    el.className = 'person-chip';
+
+    // мягкие «ореолы» по lounge
+    if (lounge === 'mazurek') el.classList.add('chip-mazurek');
+    if (lounge === 'polonez') el.classList.add('chip-polonez');
+
+    // роли дня (стили подтянутся из CSS)
+    if (isBar)    el.classList.add('chip-bar');
+    if (isCoord){
+      el.classList.add('chip-coord');
+      if (coordL === 'mazurek') el.classList.add('chip-coord-mazurek');
+      if (coordL === 'polonez') el.classList.add('chip-coord-polonez');
+    }
+    if (isZmywak) el.classList.add('chip-zmywak','chip-zmywak-ring');
+
+    // содержимое
+    const right = [];
+    if (isCoord){
+      const cls = coordL === 'mazurek' ? 'lounge-mazurek'
+               : coordL === 'polonez' ? 'lounge-polonez' : '';
+      right.push(`<span class="badge badge-coord ${cls}">koord.</span>`);
+    }
+    if (isZmywak) right.push('<span class="badge badge-zmiwaka">zmywak</span>');
+
+    // код показываем как есть (1/2/B и т.д.)
+    if (person?.shift_code){
+      right.push(`<span class="badge badge-shift">${esc(person.shift_code)}</span>`);
+    }
+
+    el.innerHTML = `
+      <span class="chip-name">${esc(person?.full_name || '—')}</span>
+      <span class="chip-right">${right.join('')}</span>
+    `;
+    return el;
+  }
+
+  function renderNotes(list){
+    const box = els.notesBox; if (!box) return;
+    box.innerHTML = '';
+    if (!Array.isArray(list) || list.length === 0){
+      box.innerHTML = '<div class="muted">Brak notatek na dziś.</div>';
+      return;
+    }
+    for (const n of list){
+      const row = document.createElement('div');
+      row.className = 'row between';
+      row.style.cssText = 'gap:8px;padding:8px 0;border-bottom:1px dashed var(--border)';
+
+      const when = timePL(n.created_at);
+      const left = document.createElement('div');
+      left.innerHTML = `<b>${esc(n.author||'')}</b> <span class="muted">${when}</span>`;
+
+      const right = document.createElement('div');
+      right.style.display = 'flex';
+      right.style.alignItems = 'center';
+      right.style.gap = '10px';
+      right.innerHTML = `<div style="max-width:100%">${esc(n.text||'')}</div>`;
+
+      const authorId = n.author_id ?? n.user_id ?? null;
+      const isMine = (authorId && myId && String(authorId) === String(myId)) || (myName && n.author === myName);
+      if (isMine && n.id != null){
+        const del = document.createElement('button');
+        del.className = 'btn-link small danger';
+        del.type = 'button';
+        del.textContent = 'Usuń';
+        del.title = 'Usuń notatkę';
+        del.addEventListener('click', async ()=>{
+          if (!confirm('Usunąć tę notatkę?')) return;
+          try{
+            await api(`/api/day-notes/${n.id}`, { method:'DELETE' });
+            const fresh = await api('/api/day-notes?date='+iso);
+            renderNotes(fresh);
+          }catch(e){ alert(e.message || 'Błąd usuwania'); }
+        });
+        right.appendChild(del);
+      }
+
+      row.appendChild(left);
+      row.appendChild(right);
+      box.appendChild(row);
+    }
+  }
+
+  // ========== Dziś w pracy: Rano/Popo ==========
+  let dayCache = { morning:[], evening:[] };
+  function renderWork(group){
+    const box = els.workBox; if (!box) return;
+    box.innerHTML = '';
+    if (els.workTitle) els.workTitle.textContent = 'Dziś w pracy:';
+
+    const tabs = document.createElement('div');
+    tabs.style.display = 'flex';
+    tabs.style.gap = '10px';
+    tabs.style.marginBottom = '10px';
+
+    const mCount = (dayCache.morning||[]).length;
+    const eCount = (dayCache.evening||[]).length;
+
+    const btnM = document.createElement('button');
+    btnM.className = 'pill tab';
+    btnM.textContent = `Rano · ${mCount}`;
+
+    const btnE = document.createElement('button');
+    btnE.className = 'pill tab';
+    btnE.textContent = `Popo · ${eCount}`;
+
+    tabs.append(btnM, btnE);
+    box.appendChild(tabs);
+
+    const list = document.createElement('div');
+    list.className = 'sg-list';
+    box.appendChild(list);
+
+    function setActive(which){
+      btnM.classList.toggle('active', which==='morning');
+      btnE.classList.toggle('active', which==='evening');
+      list.innerHTML = '';
+      (which==='morning' ? (dayCache.morning||[]) : (dayCache.evening||[]))
+        .forEach(p => list.appendChild(chip(p)));
+    }
+    btnM.addEventListener('click', ()=> setActive('morning'));
+    btnE.addEventListener('click', ()=> setActive('evening'));
+    setActive(group || 'morning');
+  }
+
+  // ---------- загрузка ----------
+  async function loadToday(){
+    try{
+      const day = await api('/api/day-shifts?date='+iso);
+      dayCache = { morning: day.morning||[], evening: day.evening||[] };
+
+      // моя смена
+      let my=null, group=null;
+      const m = dayCache.morning.find(p=>p.full_name===myName);
+      const e = dayCache.evening.find(p=>p.full_name===myName);
+      if (m){ my=m; group='morning'; }
+      if (e){ my=e; group='evening'; }
+
+      if (els.shiftBox){
+        els.shiftBox.innerHTML = my
+          ? `Masz dziś zmianę: <span class="badge badge-code">${esc(my.shift_code)}</span>`
+          : `Dziś masz wolne.`;
+      }
+
+      renderWork(group || 'morning');
+
+      const notes = await api('/api/day-notes?date='+iso);
+      renderNotes(notes);
+
+    }catch(e){
+      if (els.shiftBox) els.shiftBox.textContent = e.message || 'Błąd';
+      if (els.workBox)  els.workBox.innerHTML   = `<div class="muted">${e.message || 'Błąd'}</div>`;
+      if (els.notesBox) els.notesBox.innerHTML  = `<div class="muted">${e.message || 'Błąd'}</div>`;
+    }
+  }
+
+  // ---------- только заметки ----------
+  async function loadNotesOnly(){
+    try{
+      const notes = await api('/api/day-notes?date='+iso);
+      renderNotes(notes);
+    }catch(e){
+      if (els.notesBox) els.notesBox.innerHTML = `<div class="muted">${e.message || 'Błąd'}</div>`;
+    }
+  }
+
+  // ---------- добавление заметки ----------
+  async function addNote(){
+    const ta = $('#note-input');
+    const txt = (ta && ta.value || '').trim();
+    if (!txt) return;
+    try{
+      await api('/api/day-notes', { method:'POST', body: JSON.stringify({ date: iso, text: txt }) });
+      if (ta) ta.value='';
+      await loadNotesOnly();
+    }catch(e){ alert(e.message || 'Błąd'); }
+  }
+
+  // UX textarea
+  (function initComposerUX(){
+    const ta = $('#note-input'); if (!ta) return;
+    function autosize(){ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,160)+'px'; }
+    ta.addEventListener('input', autosize);
+    ta.addEventListener('keydown', (e)=>{
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); $('#note-add')?.click(); }
     });
-    barsWrap.appendChild(wrap);
-  }
+    autosize();
+  })();
 
-  async function loadSettings(){
-    try{
-      const s = await apiJSON('/api/me/settings');
-      if (s.hourly_rate_pln != null && rateInput) rateInput.value = s.hourly_rate_pln;
-      if (s.tax_percent     != null && taxInput)  taxInput.value  = s.tax_percent;
-    }catch(_){}
-  }
+  // кнопки
+  $('#note-add')?.addEventListener('click', addNote);
+  $('#btn-refresh')?.addEventListener('click', loadToday);
 
-  async function loadStats(){
-    const data = await apiJSON('/api/my-stats?month='+encodeURIComponent(ymStr(state.ym)));
-    if (kDone)    kDone.textContent    = `${data.hours_done} h`;
-    if (kLeft)    kLeft.textContent    = `${data.hours_left} h`;
-    if (kNetDone) kNetDone.textContent = pln(data.net_done);
-    if (kNetAll)  kNetAll.textContent  = pln(data.net_all);
-    if (barsWrap) renderBars(data.daily||[]);
-  }
-
-  // ===== Modal edycji nadgodzin / notatki
-  function openOvertimeEditor(shiftId){
-    const overlay = document.createElement('div'); overlay.className='modal-backdrop';
-    overlay.innerHTML = `
-      <div class="modal" style="max-width:560px;">
-        <div class="modal-head">
-          <div class="modal-title">Edytuj nadgodziny i notatki</div>
-          <button class="modal-close" aria-label="Zamknij">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="settings-inline">
-            <label>Start<br><input type="time" id="ot-start" /></label>
-            <label>Koniec<br><input type="time" id="ot-end" /></label>
-            <label>Przepracowano (h)<br><input type="number" id="ot-worked" step="0.01" placeholder="auto z czasu" /></label>
-          </div>
-          <div class="muted" id="ot-hint" style="margin:8px 0;"></div>
-          <label>Notatka (co zrobiłeś / dlaczego zostałeś)<br>
-            <textarea id="ot-note" rows="5" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);"></textarea>
-          </label>
-          <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
-            <button class="btn-secondary" id="ot-cancel">Anuluj</button>
-            <button class="btn-secondary" id="ot-save">Zapisz</button>
-          </div>
-        </div>
-      </div>`;
-    document.body.appendChild(overlay);
-    const close = ()=>overlay.remove();
-    overlay.addEventListener('click', e=>{ if (e.target===overlay || e.target.classList.contains('modal-close')) close(); });
-
-    // load details
-    apiJSON('/api/my-shift/'+shiftId).then(data=>{
-      const hint = $('#ot-hint', overlay);
-      if (data.default_start && data.default_end){
-        hint.textContent = `Domyślne godziny: ${data.default_start}–${data.default_end}`;
-        $('#ot-start', overlay).value = data.default_start;
-        $('#ot-end', overlay).value   = data.default_end;
-      } else hint.textContent = 'Brak domyślnych godzin dla tego kodu.';
-
-      if (data.worked_hours != null) $('#ot-worked', overlay).value = data.worked_hours;
-      if (data.note) $('#ot-note', overlay).value = data.note;
-
-      const startEl  = $('#ot-start', overlay);
-      const endEl    = $('#ot-end', overlay);
-      const workedEl = $('#ot-worked', overlay);
-
-      function recompute(){
-        const s = startEl.value, e = endEl.value;
-        if (!s || !e) return;
-        const [sh,sm] = s.split(':').map(Number);
-        const [eh,em] = e.split(':').map(Number);
-        let mins = (eh*60+em) - (sh*60+sm);
-        if (mins < 0) mins += 24*60;
-        workedEl.value = (mins/60).toFixed(2);
-      }
-      startEl.addEventListener('change', recompute);
-      endEl.addEventListener('change', recompute);
-
-      $('#ot-cancel', overlay).addEventListener('click', close);
-      $('#ot-save',   overlay).addEventListener('click', async ()=>{
-        try{
-          await apiJSON('/api/my-shift/'+shiftId+'/worklog', {
-            method:'POST',
-            body: JSON.stringify({
-              start_time: startEl.value || null,
-              end_time:   endEl.value   || null,
-              worked_hours: workedEl.value || null,
-              note: $('#ot-note', overlay).value || ''
-            })
-          });
-          window.toast?.success?.('Zapisano');
-          close();
-          await refreshAll();
-        }catch(err){
-          alert(err?.error || 'Błąd zapisu');
-        }
-      });
-    }).catch(()=>{});
-  }
-
-  // ===== Список моих смен на месяце (внизу) + действия
-  async function renderMyShiftsList(){
-    myList.innerHTML = '<div class="muted">Ładowanie…</div>';
-    try{
-      const list = await apiJSON('/api/my-shifts-brief?month='+encodeURIComponent(ymStr(state.ym)));
-      if (!list?.length){
-        myList.innerHTML = '<div class="muted">Brak zmian w tym miesiącu.</div>';
-        return;
-      }
-
-      const wrap = document.createElement('div');
-      wrap.style.display = 'flex';
-      wrap.style.flexDirection = 'column';
-      wrap.style.gap = '8px';
-
-      list.forEach(item=>{
-        const row = document.createElement('div');
-        row.className = 'row between center';
-        row.style.padding = '8px 10px';
-        row.style.border = '1px solid var(--border)';
-        row.style.borderRadius = '12px';
-
-        const left = document.createElement('div');
-        left.innerHTML = `
-          <b>${fmtDate(item.date)}</b>
-          <span class="badge">${item.code || '—'}</span>
-          <span class="muted">plan: ${item.scheduled_hours}h${item.worked_hours!=null?` · praca: ${item.worked_hours}h`:''}</span>
-        `;
-
-        const right = document.createElement('div');
-        right.className = 'row';
-        right.style.gap = '6px';
-        right.innerHTML = `
-          <button class="btn-secondary" data-act="give" data-id="${item.id}">Oddaj na rynek</button>
-          <button class="btn-secondary" data-act="edit" data-id="${item.id}">Edytuj godziny</button>
-          <button class="btn-secondary" data-act="note" data-id="${item.id}">Dodaj notatkę</button>
-        `;
-
-        row.appendChild(left);
-        row.appendChild(right);
-        wrap.appendChild(row);
-      });
-
-      myList.innerHTML = '';
-      myList.appendChild(wrap);
-
-      // делегирование кликов по действиям
-      myList.onclick = async (ev)=>{
-        const btn = ev.target.closest('button[data-act]'); if (!btn) return;
-        const id  = btn.dataset.id;
-        const act = btn.dataset.act;
-
-        try{
-          if (act === 'give'){
-            const res = await apiJSON('/api/market/offers/'+id, { method:'POST' });
-            if (res.error) throw res;
-            alert('Wystawiono zmianę na rynek.');
-          } else if (act === 'edit'){
-            openOvertimeEditor(id);
-          } else if (act === 'note'){
-            const txt = prompt('Notatka:');
-            if (!txt) return;
-            await apiJSON('/api/my-shift/'+id+'/worklog', {
-              method:'POST',
-              body: JSON.stringify({ note: txt })
-            });
-            alert('Zapisano notatkę.');
-          }
-        }catch(e){
-          alert(e?.error || e?.message || 'Błąd akcji');
-        }
-      };
-
-    }catch(err){
-      myList.innerHTML = `<div class="muted">${err?.error || 'Błąd ładowania'}</div>`;
-    }
-  }
-
-  // ===== Notatki (подборка месяца, остаётся как было)
-  const notesBox = $('#notes-summary');
-  async function loadNotesSummary(){
-    if (!notesBox) return;
-    const notes = await apiJSON('/api/my-notes?month='+encodeURIComponent(ymStr(state.ym)));
-    if (!notes.length){ notesBox.textContent = 'Brak notatek w tym miesiącu.'; return; }
-    notesBox.innerHTML = '<div style="font-weight:700;margin-bottom:6px;">Podsumowanie notatek (miesiąc)</div>' +
-      notes.map(n=>`<div style="margin:2px 0;"><span class="tag tag-small">${fmtDate(n.date)}</span> — ${String(n.note).replace(/</g,'&lt;')}</div>`).join('');
-  }
-
-  // ===== pełne odświeżenie strony
-  async function refreshAll(){
-    await Promise.all([
-      loadStats(),
-      renderMyShiftsList(),
-      loadNotesSummary()
-    ]).catch(()=>{});
-  }
-
-  // ===== bindings
-  saveBtn?.addEventListener('click', async ()=>{
-    try{
-      await apiJSON('/api/me/settings', {
-        method:'POST',
-        body: JSON.stringify({
-          hourly_rate_pln: rateInput?.value,
-          tax_percent:     taxInput?.value
-        })
-      });
-      window.toast?.success?.('Zapisano ustawienia');
-      await refreshAll();
-    }catch(err){
-      alert(err?.error || 'Błąd zapisu ustawień');
-    }
-  });
-
-  prevBtn?.addEventListener('click', async ()=>{
-    state.ym = new Date(state.ym.getFullYear(), state.ym.getMonth()-1, 1);
-    setMonthTitle();
-    await refreshAll();
-  });
-  nextBtn?.addEventListener('click', async ()=>{
-    state.ym = new Date(state.ym.getFullYear(), state.ym.getMonth()+1, 1);
-    setMonthTitle();
-    await refreshAll();
-  });
-
-  // ===== init
-  setMonthTitle();
-  try { await loadSettings(); } catch(_){}
-  await refreshAll();
+  // init
+  loadToday();
 })();
