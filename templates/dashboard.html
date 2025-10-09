@@ -19,16 +19,14 @@
       <button type="button" id="menu-proposals" class="menu-item">Propozycje</button>
       <a href="/market" class="menu-item">Rynek</a>
       <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
-      
-      <hr class="menu-sep">
+      <hr class="menu-sep" />
       <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
     </nav>
   </header>
 
   <main class="container">
     <section class="card" style="padding:14px;">
-
-      <!-- Панель управления календарём -->
+      <!-- Toolbar -->
       <div class="cal-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
         <div class="month-nav" style="display:flex;align-items:center;gap:8px;">
           <button id="prev-month" class="btn-secondary" aria-label="Poprzedni miesiąc">◀</button>
@@ -42,16 +40,16 @@
       </div>
 
       <div class="muted" style="margin:8px 0 12px;">
-        Dotknij osobę — pojawią się akcje <strong>„Zaproponuj wymianę”</strong> i <strong>„Weź tę zmianę”</strong>.
+        Kliknij osobę — pojawią się akcje <strong>„Zaproponuj wymianę”</strong> i <strong>„Weź tę zmianę”</strong>.
       </div>
 
-      <!-- ЛЕСЕНКА: сюда JS рендерит по строке на каждый dzień месяца (начиная od dziś) -->
+      <!-- Контейнер для дней месяца -->
       <div id="days-list" style="display:flex;flex-direction:column;gap:10px;"></div>
     </section>
   </main>
 
   <script src="/static/js/app.js"></script>
-  <script src="/static/js/dashboard.js?v=20250824b"></script>
+  <!-- не забудь обновить версию, чтобы кэш сбросился при деплое -->
+  <script src="/static/js/dashboard.js?v=20251009a"></script>
 </body>
 </html>
-
