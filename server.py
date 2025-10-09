@@ -851,21 +851,21 @@ def month_shifts():
         slot = 'evening' if str(sh.shift_code or '').strip().startswith('2') else 'morning'
         out.setdefault(iso, {'morning': [], 'evening': []})
 
-        role = (getattr(u, 'role', '') or '').lower()␊
-        code = (sh.shift_code or '').upper()␊
-        coord_lounge = getattr(sh, 'coord_lounge', None)  # ← безопасно␊
-␊
-        out[iso][slot].append({␊
-            'user_id': u.id,␊
-            'full_name': u.full_name,␊
-            'shift_code': sh.shift_code,␊
-            'hours': sh.hours,␊
-            'order_index': getattr(u, 'order_index', None),␊
+        role = (getattr(u, 'role', '') or '').lower()
+        code = (sh.shift_code or '').upper()
+        coord_lounge = getattr(sh, 'coord_lounge', None)  # ← безопасно
+
+        out[iso][slot].append({
+            'user_id': u.id,
+            'full_name': u.full_name,
+            'shift_code': sh.shift_code,
+            'hours': sh.hours,
+            'order_index': getattr(u, 'order_index', None),
             'is_coordinator': is_coordinator_user(u),
             'is_zmiwaka': is_zmiwaka_user(u),
-            'is_bar_today': ('B' in code),␊
-            'coord_lounge': (coord_lounge if role == 'coordinator' else None),␊
-        })␊
+            'is_bar_today': ('B' in code),
+            'coord_lounge': (coord_lounge if role == 'coordinator' else None),
+        }
 
     return jsonify(out)
 
@@ -2084,5 +2084,6 @@ if __name__ == '__main__':
     with app.app_context():
         ensure_coord_lounge_column()
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
