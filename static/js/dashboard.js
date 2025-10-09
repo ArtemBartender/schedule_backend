@@ -55,7 +55,7 @@
 
   // ========= Chips =========
   function styleAccentByLounge(el, lounge){
-    // Мягкий "ореол" по лаунжу
+    // “ореол” по лаунжу, если сервер начнёт присылать person.lounge (не мешает, если его нет)
     if (lounge === 'mazurek') {
       el.style.boxShadow = 'inset 0 0 0 2px rgba(42,110,245,.45)';
     } else if (lounge === 'polonez') {
@@ -69,14 +69,15 @@
     return b;
   }
   function chip(person, isoDate) {
-    // person: { full_name, shift_code, is_coordinator, coord_lounge, lounge, is_bar_today, is_zmiwaka }
+    // person из API month-shifts/day-shifts:
+    // { full_name, shift_code, is_zmiwaka, is_bar_today, coord_lounge, [lounge?] }
     const el = document.createElement('span');
     el.className = 'person-chip';
     el.title = person?.full_name || '';
 
-    // текущее место работы (по цифре цвета) — lounge
+    // необязательный акцент по lounge (если когда-нибудь начнём его отдавать)
     const lounge = (person?.lounge || '').toLowerCase();
-    styleAccentByLounge(el, lounge);
+    if (lounge) styleAccentByLounge(el, lounge);
 
     // имя
     const nm = document.createElement('span');
@@ -84,18 +85,17 @@
     nm.textContent = person?.full_name || '';
     el.appendChild(nm);
 
-    // бейджи
-    // bar?
+    // бар?
     const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
     const isBar = person?.is_bar_today ?? looksBar;
     if (isBar) el.appendChild(badge('bar','badge-bar'));
 
-    // координатор?
-    if (person?.is_coordinator){
+    // координатор ТОЛЬКО если у этой записи есть coord_lounge
+    if (person?.coord_lounge){
       const k = badge('koord.','badge-coord');
-      const cl = (person?.coord_lounge || lounge || '').toLowerCase();
-      if (cl === 'mazurek') { k.classList.add('lounge-mazurek'); }
-      else if (cl === 'polonez') { k.classList.add('lounge-polonez'); }
+      const cl = String(person.coord_lounge).toLowerCase();
+      if (cl === 'mazurek') k.classList.add('lounge-mazurek');
+      else if (cl === 'polonez') k.classList.add('lounge-polonez');
       el.appendChild(k);
     }
 
@@ -104,7 +104,7 @@
       el.appendChild(badge('zmywak','badge-zmiwak'));
     }
 
-    // код: показываем 1/2 (без /B)
+    // код (1/2, скрываем /B в бейдже)
     const codeText = String(person?.shift_code || '').replace(/\s+/g,'').replace('/B','').replace('B','');
     if (codeText){
       const c = document.createElement('span');
