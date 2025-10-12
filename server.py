@@ -820,6 +820,7 @@ def my_shifts():
 @app.get('/api/day-shifts')
 @jwt_required()
 def day_shifts():
+    """Смены за один день: координатор = если у смены есть coord_lounge"""
     d_str = request.args.get('date', '')
     try:
         d = datetime.fromisoformat(d_str).date()
@@ -848,10 +849,18 @@ def day_shifts():
         return (code or '').strip().upper().startswith('1')
 
     morning, evening = [], []
-    for s in rows:                       # <-- важное: тут именно s, НЕ sh
+    for s in rows:
         u = s.user
-        role = (getattr(u, 'role', '') or '').lower()
         code = (s.shift_code or '').upper()
+
+        # определяем текущий lounge
+        lounge = getattr(s, 'lounge', None)
+        coord_lounge = (getattr(s, 'coord_lounge', None) or '').strip().lower() or None
+
+        # логика ролей
+        is_bar = 'B' in code
+        is_zmiwak = is_zmiwaka_user(u)
+        is_coord_today = bool(coord_lounge)  # КЛЮЧЕВОЕ: только если есть coord_lounge
 
         item = {
             'user_id': u.id if u else None,
@@ -859,12 +868,11 @@ def day_shifts():
             'shift_code': s.shift_code,
             'hours': s.hours,
             'order_index': getattr(u, 'order_index', None),
-            'is_coordinator': is_coordinator_user(u),
-            'is_zmiwaka': is_zmiwaka_user(u),
-            'is_bar_today': ('B' in code),
-            # если в таблице нет колонки lounge — вернётся None, это ок
-            'lounge': getattr(s, 'lounge', None),
-            'coord_lounge': (getattr(s, 'coord_lounge', None) if role == 'coordinator' else None),
+            'is_coordinator': is_coord_today,
+            'is_zmiwaka': is_zmiwak,
+            'is_bar_today': is_bar,
+            'lounge': lounge,
+            'coord_lounge': coord_lounge,
         }
 
         if is_evening(s.shift_code):
@@ -878,7 +886,9 @@ def day_shifts():
 @app.get('/api/month-shifts')
 @jwt_required()
 def month_shifts():
-    """Возвращает весь месяц пачкой: {"YYYY-MM-DD": {"morning":[...], "evening":[...]}, ...}"""
+    """Возвращает весь месяц пачкой: {"YYYY-MM-DD": {"morning":[...], "evening":[...]}, ...}.
+       Координатор = только если в этой смене есть coord_lounge.
+    """
     try:
         y = int(request.args.get('year', '0'))
         m = int(request.args.get('month', '0'))
@@ -894,7 +904,7 @@ def month_shifts():
     q = (db.session.query(Shift, User)
          .join(User, User.id == Shift.user_id)
          .filter(Shift.shift_date >= first, Shift.shift_date <= last)
-         .order_by(Shift.shift_date.asc(), User.order_index.asc(), User.full_name.asc()))
+         .order_by(Shift.shift_date.asc(), User.order_index.asc().nulls_last(), User.full_name.asc()))
 
     out = {}
     for sh, u in q.all():
@@ -902,9 +912,13 @@ def month_shifts():
         slot = 'evening' if str(sh.shift_code or '').strip().startswith('2') else 'morning'
         out.setdefault(iso, {'morning': [], 'evening': []})
 
-        role = (getattr(u, 'role', '') or '').lower()
         code = (sh.shift_code or '').upper()
-        coord_lounge = getattr(sh, 'coord_lounge', None)
+        lounge = getattr(sh, 'lounge', None)
+        coord_lounge = (getattr(sh, 'coord_lounge', None) or '').strip().lower() or None
+
+        is_bar = 'B' in code
+        is_zmiwak = is_zmiwaka_user(u)
+        is_coord_today = bool(coord_lounge)  # <--- фиксация
 
         out[iso][slot].append({
             'user_id': u.id,
@@ -912,11 +926,11 @@ def month_shifts():
             'shift_code': sh.shift_code,
             'hours': sh.hours,
             'order_index': getattr(u, 'order_index', None),
-            'is_coordinator': is_coordinator_user(u),
-            'is_zmiwaka': is_zmiwaka_user(u),
-            'is_bar_today': ('B' in code),
-            'lounge': getattr(sh, 'lounge', None),
-            'coord_lounge': (coord_lounge if role == 'coordinator' else None),
+            'is_coordinator': is_coord_today,
+            'is_zmiwaka': is_zmiwak,
+            'is_bar_today': is_bar,
+            'lounge': lounge,
+            'coord_lounge': coord_lounge,
         })
 
     return jsonify(out)
@@ -2574,6 +2588,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
