@@ -355,6 +355,31 @@ def code_group(code: str) -> str:
     if c.startswith('1'): return 'morning'
     if c.startswith('2'): return 'evening'
     return ''
+# --- helpers (рядом с другими утилитами) ---
+
+def _shift_to_dict(shift, user):
+    """Единый формат для фронта. Координатор — если У ЭТОЙ смены есть coord_lounge."""
+    code = (shift.shift_code or '').strip()
+    lounge = (shift.lounge or '' ).strip().lower() or None
+    coord_lounge = (shift.coord_lounge or '').strip().lower() or None
+
+    # bar: если в коде есть 'B' (1/B, 2/B, B и т.п.)
+    is_bar = 'B' in code.upper()
+
+    # zmywak: если так помечено (оставь свою проверку, если другая)
+    note = (shift.work_note or '').lower()
+    is_zmiwak = 'zmyw' in note or 'zmywak' in note
+
+    return {
+        'user_id'        : user.id,
+        'full_name'      : user.full_name,
+        'shift_code'     : code,
+        'lounge'         : lounge,        # цвет цифры
+        'coord_lounge'   : coord_lounge,  # цвет заливки коорда
+        'is_coordinator' : bool(coord_lounge),
+        'is_bar_today'   : is_bar,
+        'is_zmiwaka'     : is_zmiwak,
+    }
 
 
 # --- Timezone helpers (Europe/Warsaw) ---
@@ -2549,6 +2574,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
