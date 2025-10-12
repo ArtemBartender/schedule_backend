@@ -1,3 +1,4 @@
+// static/js/stats.js
 (function initStats(){
   'use strict';
   if (!document.body.classList.contains('page-stats')) return;
@@ -6,18 +7,43 @@
   const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
   const esc = s => String(s ?? '').replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
+  // ==== API с токеном и CORS ====
   async function api(url, opts){
     const headers = new Headers((opts && opts.headers) || {});
+
+    // JSON body, если не FormData
     if (opts && opts.body && !(opts.body instanceof FormData) && !headers.has('Content-Type')){
       headers.set('Content-Type','application/json');
     }
-    const t = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
-    if (t) headers.set('Authorization','Bearer '+t);
 
-    const res = await fetch(url, Object.assign({ cache:'no-store', headers }, opts||{}));
+    // достаём токен из разных мест
+    let t = null;
+    try {
+      if (typeof window.getToken === 'function') t = window.getToken();
+      if (!t) t = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+    } catch(_) {}
+
+    if (t) headers.set('Authorization','Bearer '+t);
+    else console.warn('⚠️ No JWT token found when calling', url);
+
+    const res = await fetch(url, Object.assign({
+      cache:'no-store',
+      headers,
+      credentials:'include', // важно для Render
+      mode:'cors'
+    }, opts||{}));
+
     const ct  = res.headers.get('content-type')||'';
-    const body= ct.includes('application/json') ? await res.json().catch(()=>({})) : await res.text().catch(()=> '');
-    if (!res.ok){ const err=new Error(body?.error || ('Błąd '+res.status)); err.status=res.status; throw err; }
+    const body= ct.includes('application/json')
+      ? await res.json().catch(()=>({}))
+      : await res.text().catch(()=> '');
+
+    if (!res.ok){
+      const err = new Error(body?.error || ('Błąd '+res.status));
+      err.status = res.status;
+      console.error('❌ API error', err, url);
+      throw err;
+    }
     return body;
   }
 
@@ -27,7 +53,11 @@
     catch(_){ return {}; }
   }
   function currentUser(){
-    const tok = localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || '';
+    let tok = '';
+    try {
+      tok = localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || '';
+      if (typeof window.getToken === 'function' && !tok) tok = window.getToken() || '';
+    } catch(_){}
     if (!tok) return {};
     return decodeJWT(tok) || {};
   }
@@ -54,8 +84,16 @@
   const btnPrev = $('#btn-prev') || document.querySelector('.month-prev');
   const btnNext = $('#btn-next') || document.querySelector('.month-next');
 
-  btnPrev?.addEventListener('click', ()=>{ month--; if(month<1){month=12;year--;} loadMonth(); });
-  btnNext?.addEventListener('click', ()=>{ month++; if(month>12){month=1;year++;} loadMonth(); });
+  btnPrev?.addEventListener('click', ()=>{
+    month--;
+    if(month < 1){ month = 12; year--; }
+    loadMonth();
+  });
+  btnNext?.addEventListener('click', ()=>{
+    month++;
+    if(month > 12){ month = 1; year++; }
+    loadMonth();
+  });
 
   saveBtn?.addEventListener('click', ()=>{
     if (rateInput) localStorage.setItem('rate', rateInput.value);
@@ -129,12 +167,12 @@
 
       renderChart(daily);
     }catch(e){
-      console.error('Month load failed', e);
+      console.error('Month load failed:', e);
       if (elWorked) elWorked.textContent = '—';
       if (elLeft)   elLeft.textContent = '—';
       if (elPayDone)elPayDone.textContent = '—';
       if (elPayAll) elPayAll.textContent = '—';
-      if (elChart)  elChart.innerHTML = '<div class="muted">Błąd ładowania</div>';
+      if (elChart)  elChart.innerHTML = `<div class="muted">Błąd ładowania (${e.message || e})</div>`;
     }
   }
 
