@@ -145,10 +145,16 @@
       // фильтруем только мои смены
       for (const [day, block] of Object.entries(monthData)){
         const shifts = [...(block.morning || []), ...(block.evening || [])];
-        const myShifts = shifts.filter(s =>
-          (s.user_id && myId && Number(s.user_id) === myId) ||
-          (s.full_name && myName && s.full_name === myName)
-        );
+        const myShifts = shifts.filter(s => {
+          const uidMatch = s.user_id && myId && Number(s.user_id) === myId;
+          const nameMatch = (
+            s.full_name &&
+            myName &&
+            s.full_name.trim().toLowerCase().includes(myName.trim().toLowerCase())
+          );
+          return uidMatch || nameMatch;
+        });
+
         if (!myShifts.length) continue;
         const hours = myShifts.reduce((a,b)=>a+(Number(b.hours)||0),0);
         totalHours += hours;
@@ -179,3 +185,4 @@
   // init
   loadMonth();
 })();
+
