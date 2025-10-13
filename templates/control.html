@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Kontrola zmian{% endblock %}
+
+{% block content %}
+<body class="page-control">
+  <div class="topbar">
+    <div class="left">
+      <button id="menu-toggle">☰</button>
+      <h1>Kontrola zmian i frekwencji</h1>
+    </div>
+    <div class="right">
+      <select id="month-select" class="btn-secondary"></select>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="cards-row">
+      <div class="card kpi-card">
+        <div class="kpi-label">Zamiany</div>
+        <div class="kpi-value" id="kpi-swaps">—</div>
+      </div>
+      <div class="card kpi-card">
+        <div class="kpi-label">Nieobecności</div>
+        <div class="kpi-value" id="kpi-missing">—</div>
+      </div>
+      <div class="card kpi-card">
+        <div class="kpi-label">Extra godziny</div>
+        <div class="kpi-value" id="kpi-extra">—</div>
+      </div>
+      <div class="card kpi-card">
+        <div class="kpi-label">Braki / Nadwyżki</div>
+        <div class="kpi-value" id="kpi-imbalance">—</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="swaps">🔄 Zamiany</button>
+      <button class="tab-btn" data-tab="extra">⏰ Dodatkowe godziny</button>
+      <button class="tab-btn" data-tab="missing">❌ Nieobecności</button>
+      <button class="tab-btn" data-tab="imbalance">⚖️ Bilans obsady</button>
+    </div>
+
+    <div class="tab-content" id="tab-swaps"></div>
+    <div class="tab-content hidden" id="tab-extra"></div>
+    <div class="tab-content hidden" id="tab-missing"></div>
+    <div class="tab-content hidden" id="tab-imbalance"></div>
+  </div>
+
+  <script src="/static/js/control.js"></script>
+</body>
+{% endblock %}
