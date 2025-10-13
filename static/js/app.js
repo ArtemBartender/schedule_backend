@@ -9,7 +9,6 @@
   const TOKEN_KEY = 'access_token';
   function getToken(){
     try{
-      // читаем и из localStorage, и из sessionStorage
       return (
         localStorage.getItem(TOKEN_KEY) ||
         sessionStorage.getItem(TOKEN_KEY) ||
@@ -18,17 +17,11 @@
     }catch(_){ return ''; }
   }
   function setToken(t){
-    try{
-      localStorage.setItem(TOKEN_KEY, t||'');
-    }catch(_){}
+    try{ localStorage.setItem(TOKEN_KEY, t||''); }catch(_){}
   }
   function clearToken(){
-    try{
-      localStorage.removeItem(TOKEN_KEY);
-    }catch(_){}
-    try{
-      sessionStorage.removeItem(TOKEN_KEY);
-    }catch(_){}
+    try{ localStorage.removeItem(TOKEN_KEY); }catch(_){}
+    try{ sessionStorage.removeItem(TOKEN_KEY); }catch(_){}
   }
 
   function decodeJWT(token){
@@ -57,27 +50,37 @@
       const body = ct.includes('application/json') ? await res.json().catch(()=>({})) : await res.text().catch(()=> '');
       if (!res.ok){
         if (res.status === 401) {
-          // выкидываем юзера на логин, сохраняя куда он хотел
           try { clearToken(); } catch(_){}
           const redirect = encodeURIComponent(window.location.pathname + window.location.search);
           window.location.href = '/?redirect=' + redirect;
-          return; // break
+          return;
         }
         const err = new Error(body?.error || `Błąd ${res.status}`);
         err.status = res.status; throw err;
       }
-
       return body;
     };
 
     try { return await run(); }
     catch(e){
-      if (e.status === 500 || e.status === 503){ // Render/DB just woke up
+      if (e.status === 500 || e.status === 503){
         await new Promise(r=>setTimeout(r, 800));
         return await run();
       }
       throw e;
     }
+  }
+
+  // API helper без токена (для login/register/reset)
+  async function apiAuth(path, body){
+    const res = await fetch(path, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body||{})
+    });
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.error || ('HTTP '+res.status));
+    return data;
   }
 
   // отдать наружу то, что нужно другим скриптам
@@ -111,18 +114,6 @@
     const msgLogin = $('#login-msg');
     const msgReg   = $('#register-msg');
 
-    // API helper (использует тот же токен и обработку, что и остальная часть app.js)
-    async function apiAuth(path, body){
-      const res = await fetch(path, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(body||{})
-      });
-      const data = await res.json().catch(()=> ({}));
-      if (!res.ok) throw new Error(data.error || ('HTTP '+res.status));
-      return data;
-    }
-
     // переключения Login <-> Register
     $('#to-register')?.addEventListener('click', (e)=>{ e.preventDefault(); $('#login-view').classList.add('hidden'); $('#register-view').classList.remove('hidden'); });
     $('#to-login')?.addEventListener('click', (e)=>{ e.preventDefault(); $('#register-view').classList.add('hidden'); $('#login-view').classList.remove('hidden'); });
@@ -152,10 +143,10 @@
       if (!p) return 0;
       let s = 0;
       if (p.length >= 8) s++;
-      if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s++
+      if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s++;
       if (/\d/.test(p)) s++;
       if (/[^A-Za-z0-9]/.test(p)) s++;
-      if (p.length >= 12) s++; // бонус за длину
+      if (p.length >= 12) s++;
       return Math.min(s,5);
     }
     regPass?.addEventListener('input', ()=>{
@@ -181,7 +172,6 @@
         const token = data && (data.access_token || data.token);
         if (!token) throw new Error('Brak tokenu');
 
-        // «Запомнить меня»: по чекбоксу пишем в localStorage, иначе в sessionStorage
         const remember = $('#remember-me')?.checked;
         if (remember) {
           localStorage.setItem('access_token', token);
@@ -208,6 +198,17 @@
       const email     = String(fd.get('email')||'').trim();
       const password  = String(fd.get('password')||'');
 
+      function strengthScore(p){
+        if (!p) return 0;
+        let s = 0;
+        if (p.length >= 8) s++;
+        if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s++;
+        if (/\d/.test(p)) s++;
+        if (/[^A-Za-z0-9]/.test(p)) s++;
+        if (p.length >= 12) s++;
+        return Math.min(s,5);
+      }
+
       if (!full_name || !email || !password){
         msgReg.textContent = 'Wypełnij wszystkie pola.'; msgReg.classList.add('error'); return;
       }
@@ -225,10 +226,48 @@
       }
     });
 
-    // «Забыли пароль?» — заглушка
-    $('#forgot-link')?.addEventListener('click', (e)=>{
+    // «Забыли пароль?» — ТЕПЕРЬ РАБОТАЕТ
+    $('#forgot-link')?.addEventListener('click', async (e)=>{
       e.preventDefault();
-      alert('Reset hasła będzie dostępny wkrótce. Skontaktuj się z koordynatorem.');
+
+      // простой диалог
+      const overlay = document.createElement('div'); overlay.className = 'modal-backdrop';
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:420px;">
+          <div class="modal-head">
+            <div class="modal-title">Reset hasła</div>
+            <button class="modal-close" aria-label="Zamknij">×</button>
+          </div>
+          <div class="modal-body">
+            <p>Podaj email związany z kontem. Wyślemy link resetujący (log w konsoli serwera).</p>
+            <input type="email" id="reset-email" placeholder="email@domena" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);" />
+            <div id="reset-msg" class="form-msg" style="margin-top:8px;"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+              <button class="btn-secondary modal-close">Anuluj</button>
+              <button class="btn-secondary" id="reset-send">Wyślij link</button>
+            </div>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const close = ()=> overlay.remove();
+      overlay.addEventListener('click', ev => {
+        if (ev.target === overlay || ev.target.classList.contains('modal-close')) close();
+      });
+
+      const msg = overlay.querySelector('#reset-msg');
+      overlay.querySelector('#reset-send').addEventListener('click', async ()=>{
+        msg.textContent=''; msg.className='form-msg';
+        const email = String(overlay.querySelector('#reset-email').value||'').trim().toLowerCase();
+        if (!email){ msg.textContent='Podaj email.'; msg.classList.add('error'); return; }
+        try{
+          await apiAuth('/api/password/request', { email });
+          msg.textContent='Jeśli email istnieje — wysłaliśmy link. Sprawdź pocztę (lub link w logach).';
+          msg.classList.add('ok');
+        }catch(err){
+          msg.textContent = err.message || 'Błąd';
+          msg.classList.add('error');
+        }
+      });
     });
   })();
 
@@ -240,8 +279,6 @@
     if (panel.dataset.bound === '1') return;
     panel.dataset.bound = '1';
 
-
-    // Внутри initMenu()
     const coordLink = document.getElementById('menu-coord-panel');
     if (coordLink) {
       const claims = (typeof currentClaims === 'function') ? currentClaims() : {};
@@ -253,12 +290,7 @@
     const adminLink = document.getElementById('menu-admin');
     if (adminLink) {
       const isAdmin = String(claims.role || '').toLowerCase() === 'admin';
-      if (!isAdmin) {
-        // полностью убираем пункт из DOM, чтобы по нему нельзя было кликнуть
-        adminLink.remove();
-      } else {
-        adminLink.hidden = false;
-      }
+      if (!isAdmin) adminLink.remove(); else adminLink.hidden = false;
     }
 
     function open(){
@@ -666,40 +698,96 @@
 
 
 // ---- Time helpers (Europe/Warsaw) ----
-// (без export; пробрасываем в window ниже)
 function warsawToday() {
   const s = new Date().toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' });
-  // s типа "25.08.2025, 16:03:21"
   const [d, m, y] = s.split(',')[0].split('.').map(x => parseInt(x, 10));
-  return new Date(Date.UTC(y, m - 1, d)); // UTC-день
+  return new Date(Date.UTC(y, m - 1, d));
 }
 function warsawTomorrow() {
   const t = warsawToday();
   t.setUTCDate(t.getUTCDate() + 1);
   return t;
 }
-function isoToUTCDate(iso /* 'YYYY-MM-DD' */) {
+function isoToUTCDate(iso) {
   const [Y, M, D] = String(iso || '').split('-').map(Number);
   return new Date(Date.UTC(Y, M - 1, D));
 }
 function isBeforeTomorrowWarsaw(iso) {
-  // true если iso < завтра по Варшаве
   return isoToUTCDate(iso) < warsawTomorrow();
 }
-// отдаём глобально для других скриптов
 window.warsawToday = warsawToday;
 window.warsawTomorrow = warsawTomorrow;
 window.isoToUTCDate = isoToUTCDate;
 window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
 
-
 (function startKeepAlive(){
   const ping = () => fetch('/api/health', { cache: 'no-store' }).catch(()=>{});
-  ping(); // сразу при загрузке
-  setInterval(ping, 240000); // каждые ~4 минуты
+  ping();
+  setInterval(ping, 240000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') ping();
   });
 })();
 
+// ===== Password Reset page support =====
+(function initPasswordReset(){
+  // работает на любой странице, но активируется только на /reset?token=...
+  const url = new URL(window.location.href);
+  if (url.pathname !== '/reset') return;
 
+  const token = url.searchParams.get('token') || '';
+
+  // если на странице уже есть собственная форма — цепляемся к ней
+  let form = document.getElementById('reset-form');
+  let msg  = document.getElementById('reset-msg');
+  let pass1= document.getElementById('new-pass');
+  let pass2= document.getElementById('new-pass2');
+
+  // если формы нет — создадим простую встроенную
+  if (!form){
+    const box = document.createElement('div');
+    box.style.cssText = 'max-width:420px;margin:40px auto;padding:16px;border:1px solid var(--border,#333);border-radius:12px;';
+    box.innerHTML = `
+      <h2 style="margin-top:0">Reset hasła</h2>
+      <form id="reset-form">
+        <input id="new-pass" type="password" placeholder="Nowe hasło" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border,#333);margin-bottom:8px;">
+        <input id="new-pass2" type="password" placeholder="Powtórz hasło" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border,#333);margin-bottom:8px;">
+        <button class="btn-secondary" type="submit">Zapisz</button>
+        <div id="reset-msg" class="form-msg" style="margin-top:10px;"></div>
+      </form>
+    `;
+    document.body.appendChild(box);
+    form = box.querySelector('#reset-form');
+    pass1 = box.querySelector('#new-pass');
+    pass2 = box.querySelector('#new-pass2');
+    msg   = box.querySelector('#reset-msg');
+  }
+
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    msg.textContent=''; msg.className='form-msg';
+    const p1 = String(pass1.value||'');
+    const p2 = String(pass2.value||'');
+    if (!token){ msg.textContent='Brak tokenu w linku.'; msg.classList.add('error'); return; }
+    if (!p1 || p1.length < 8){ msg.textContent='Hasło musi mieć ≥ 8 znaków.'; msg.classList.add('error'); return; }
+    if (p1 !== p2){ msg.textContent='Hasła nie są takie same.'; msg.classList.add('error'); return; }
+
+    try{
+      await fetch('/api/password/reset', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token, new_password: p1 })
+      }).then(async r=>{
+        const data = await r.json().catch(()=> ({}));
+        if (!r.ok) throw new Error(data.error || ('HTTP '+r.status));
+        return data;
+      });
+      msg.textContent='Hasło zmienione. Zaloguj się nowym hasłem.';
+      msg.classList.add('ok');
+      setTimeout(()=>{ window.location.href = '/'; }, 900);
+    }catch(err){
+      msg.textContent = err.message || 'Błąd resetu';
+      msg.classList.add('error');
+    }
+  });
+})();
