@@ -1,0 +1,32 @@
+<section class="card small" style="max-width:380px;margin:auto;margin-top:100px;">
+  <h2>Nowe hasło</h2>
+  <input type="password" id="pw1" placeholder="Nowe hasło">
+  <input type="password" id="pw2" placeholder="Powtórz hasło">
+  <button id="pw-save">Zapisz</button>
+</section>
+
+<script>
+(async function(){
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+  const btn = document.getElementById('pw-save');
+  const pw1 = document.getElementById('pw1');
+  const pw2 = document.getElementById('pw2');
+
+  btn.addEventListener('click', async ()=>{
+    if (!pw1.value || pw1.value !== pw2.value) return alert('Hasła się nie zgadzają');
+    const res = await fetch('/api/password/reset', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token, new_password: pw1.value })
+    });
+    const data = await res.json().catch(()=>({}));
+    if (res.ok) {
+      alert('Hasło zmienione, możesz się zalogować.');
+      location.href = '/login';
+    } else {
+      alert(data.error || 'Błąd');
+    }
+  });
+})();
+</script>
