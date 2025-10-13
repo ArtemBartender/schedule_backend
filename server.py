@@ -2707,6 +2707,13 @@ def proposals_page():
 def market_page():
     return render_template('market.html')
 
+@app.route('/control')
+@jwt_required(optional=True)
+def page_control():
+    """Strona kontroli zmian (dla admina)"""
+    return render_template('control.html')
+
+
 
 @app.errorhandler(Exception)
 def catch_all(e):
@@ -2720,6 +2727,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
