@@ -82,6 +82,9 @@ class User(db.Model):
     is_zmiwaka = db.Column(db.Boolean, nullable=False, default=False)
     hourly_rate_pln = db.Column(db.Numeric(10, 2), nullable=True)
     tax_percent = db.Column(db.Numeric(5, 2), nullable=True, default=0)
+    reset_token   = db.Column(db.String(128), nullable=True)
+    reset_expires = db.Column(db.DateTime, nullable=True)
+
 
     shifts = db.relationship('Shift', backref='user', cascade='all, delete-orphan')
 
@@ -2632,6 +2635,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
