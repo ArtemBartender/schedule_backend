@@ -5,6 +5,7 @@ import os
 import io
 import re
 import json
+import secrets
 import unicodedata
 from openpyxl import load_workbook
 from flask import send_file
@@ -1243,6 +1244,49 @@ def my_notes_month():
             .order_by(Shift.shift_date.asc())
             .all())
     return jsonify([{'date': s.shift_date.isoformat(), 'note': s.work_note} for s in rows])
+
+
+# ========== 1. Запрос на сброс ==========
+@app.post("/api/password/request")
+def password_request():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"ok": True})  # не раскрываем, что email не существует
+
+    user.reset_token = secrets.token_urlsafe(32)
+    user.reset_expires = datetime.utcnow() + timedelta(minutes=30)
+    db.session.commit()
+
+    reset_url = f"https://lot-schedule-api.onrender.com/reset?token={user.reset_token}"
+    print("=== RESET LINK ===")
+    print(reset_url)
+    # Тут можно подключить почту, но пока просто лог в консоль
+
+    return jsonify({"ok": True, "msg": "Reset link sent"})
+
+# ========== 2. Сброс пароля ==========
+@app.post("/api/password/reset")
+def password_reset():
+    data = request.get_json() or {}
+    token = data.get("token")
+    new_pw = data.get("new_password")
+
+    if not token or not new_pw:
+        return jsonify({"error": "Missing token or password"}), 400
+
+    user = User.query.filter_by(reset_token=token).first()
+    if not user or not user.reset_expires or user.reset_expires < datetime.utcnow():
+        return jsonify({"error": "Invalid or expired token"}), 400
+
+    user.password_hash = bcrypt.generate_password_hash(new_pw).decode("utf-8")
+    user.reset_token = None
+    user.reset_expires = None
+    db.session.commit()
+    return jsonify({"ok": True, "msg": "Password updated"})
+
 
 # ---------------------------------
 # Proposals (swap requests) — двухэтапное утверждение
@@ -2588,6 +2632,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
