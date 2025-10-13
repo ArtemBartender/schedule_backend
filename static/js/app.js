@@ -278,6 +278,12 @@
     if (!toggle || !panel) return;
     if (panel.dataset.bound === '1') return;
     panel.dataset.bound = '1';
+    const controlLink = document.getElementById('menu-control');
+    if (controlLink) {
+      const claims = currentClaims();
+      const isAdmin = (claims.role || '').toLowerCase() === 'admin';
+      controlLink.hidden = !isAdmin;
+    }
 
     const coordLink = document.getElementById('menu-coord-panel');
     if (coordLink) {
@@ -791,3 +797,4 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
     }
   });
 })();
+
