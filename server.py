@@ -9,7 +9,7 @@ import secrets
 import unicodedata
 from openpyxl import load_workbook
 from flask import send_file
-from sqlalchemy import delete
+from sqlalchemy import delete, extract
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from datetime import datetime, timezone, timedelta
@@ -886,6 +886,91 @@ def day_shifts():
 
     return jsonify({'date': d.isoformat(), 'morning': morning, 'evening': evening})
 
+
+
+@app.route('/api/admin/control')
+@jwt_required()
+def admin_control():
+    claims = get_jwt()
+    if claims.get('role') not in ('admin', 'coordinator'):
+        return jsonify({'error': 'Brak uprawnień'}), 403
+
+    ym = request.args.get('month', '')
+    year, month = map(int, ym.split('-')) if '-' in ym else (date.today().year, date.today().month)
+
+    # === 1. Swapy ===
+    swaps = Proposal.query.filter(
+        extract('year', Proposal.created_at) == year,
+        extract('month', Proposal.created_at) == month,
+        Proposal.status.in_(['accepted', 'approved'])
+    ).all()
+
+    swaps_data = [{
+        "date": s.created_at.strftime('%Y-%m-%d'),
+        "from": s.requester.full_name if s.requester else '?',
+        "to": s.target_user.full_name if s.target_user else '?',
+        "shift_from": s.my_date,
+        "shift_to": s.their_date
+    } for s in swaps]
+
+    # === 2. Extra godziny ===
+    extra = WorkLog.query.filter(
+        extract('year', WorkLog.date) == year,
+        extract('month', WorkLog.date) == month,
+        WorkLog.worked_hours > WorkLog.default_hours
+    ).all()
+    extra_data = [{
+        "date": w.date.strftime('%Y-%m-%d'),
+        "user": w.user.full_name if w.user else '?',
+        "shift": w.shift_code,
+        "extra": round(w.worked_hours - w.default_hours, 2),
+        "note": w.note or ''
+    } for w in extra]
+
+    # === 3. Nieobecności ===
+    missing = Attendance.query.filter(
+        extract('year', Attendance.date) == year,
+        extract('month', Attendance.date) == month,
+        Attendance.status == 'absent'
+    ).all()
+    missing_data = [{
+        "date": m.date.strftime('%Y-%m-%d'),
+        "user": m.user.full_name if m.user else '?',
+        "shift": m.shift_code,
+        "reason": m.reason or ''
+    } for m in missing]
+
+    # === 4. Bilans obsady ===
+    shifts = Shift.query.filter(
+        extract('year', Shift.shift_date) == year,
+        extract('month', Shift.shift_date) == month
+    ).all()
+    daily = {}
+    for s in shifts:
+        key = s.shift_date.isoformat()
+        if key not in daily:
+            daily[key] = {'rano': 0, 'popo': 0}
+        if s.shift_code.lower().startswith('1'):
+            daily[key]['rano'] += 1
+        elif s.shift_code.lower().startswith('2'):
+            daily[key]['popo'] += 1
+    imbalance_data = []
+    for d, v in daily.items():
+        if v['rano'] != 12 or v['popo'] != 12:
+            imbalance_data.append({
+                'date': d,
+                'rano': v['rano'],
+                'popo': v['popo'],
+                'status': 'niedobór' if v['rano'] < 12 or v['popo'] < 12 else 'nadwyżka'
+            })
+
+    return jsonify({
+        "swaps": swaps_data,
+        "extra_hours": extra_data,
+        "missing": missing_data,
+        "imbalance": imbalance_data
+    })
+    
 
 @app.get('/api/month-shifts')
 @jwt_required()
@@ -2635,6 +2720,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
