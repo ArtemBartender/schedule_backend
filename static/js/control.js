@@ -2,77 +2,91 @@
   'use strict';
   if (!document.body.classList.contains('page-control')) return;
 
-  // menu init
-  if (typeof initMenu === 'function') initMenu();
+  const content = document.getElementById('control-content');
+  if (!content) return;
 
-  const $ = s => document.querySelector(s);
-  const $$ = s => Array.from(document.querySelectorAll(s));
+  // initMenu (из app.js)
+  if (typeof window.initMenu === 'function') window.initMenu();
 
-  const select = $('#month-select');
-  const now = new Date();
-
-  // === month selector ===
-  for (let i=0; i<6; i++){
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const label = new Intl.DateTimeFormat('pl-PL', {month:'long', year:'numeric'}).format(d);
-    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    const opt = document.createElement('option');
-    opt.value = val;
-    opt.textContent = label.charAt(0).toUpperCase() + label.slice(1);
-    if (i===0) opt.selected = true;
-    select.appendChild(opt);
-  }
-
-  const tabs = $$('.tab-btn');
-  tabs.forEach(btn => {
-    btn.addEventListener('click', ()=>{
-      tabs.forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      const id = btn.dataset.tab;
-      $$('.tab-content').forEach(tc => tc.classList.add('hidden'));
-      $('#tab-'+id).classList.remove('hidden');
+  // ---- helpers ----
+  const createEl = (tag, cls) => { const e=document.createElement(tag); if(cls)e.className=cls; return e; };
+  const modalBackdrop = html => {
+    const m = createEl('div','modal-backdrop');
+    m.innerHTML = `<div class="modal">${html}</div>`;
+    document.body.appendChild(m);
+    m.addEventListener('click', e=>{
+      if (e.target===m || e.target.classList.contains('modal-close')) m.remove();
     });
-  });
-
-  // === render helpers ===
-  const renderTable = (container, rows, headers) => {
-    if (!rows?.length){ container.innerHTML = '<div class="muted">Brak danych</div>'; return; }
-    const table = document.createElement('table');
-    table.className = 'data-table';
-    const thead = document.createElement('thead');
-    thead.innerHTML = '<tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr>';
-    table.appendChild(thead);
-    const tbody = document.createElement('tbody');
-    rows.forEach(r=>{
-      const tr = document.createElement('tr');
-      headers.forEach(h=>{
-        const key = h.toLowerCase();
-        const val = r[key] ?? '';
-        tr.innerHTML += `<td>${val}</td>`;
-      });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    container.innerHTML = '';
-    container.appendChild(table);
   };
 
-  async function loadControl(){
-    const month = select.value;
-    const data = await api('/api/admin/control?month='+month);
-
-    $('#kpi-swaps').textContent = data.swaps?.length || 0;
-    $('#kpi-missing').textContent = data.missing?.length || 0;
-    $('#kpi-extra').textContent = data.extra_hours?.length || 0;
-    $('#kpi-imbalance').textContent = data.imbalance?.length || 0;
-
-    // tables
-    renderTable($('#tab-swaps'), data.swaps, ['Date', 'From', 'To', 'Shift_from', 'Shift_to']);
-    renderTable($('#tab-extra'), data.extra_hours, ['Date', 'User', 'Shift', 'Extra', 'Note']);
-    renderTable($('#tab-missing'), data.missing, ['Date', 'User', 'Shift', 'Reason']);
-    renderTable($('#tab-imbalance'), data.imbalance, ['Date', 'Rano', 'Popo', 'Status']);
+  // ---- modal builders ----
+  function openLateModal(){
+    modalBackdrop(`
+      <div class="modal-head">
+        <div class="modal-title">Dodaj spóźnienie</div>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <label>Pracownik:</label><select id="late-user"></select>
+        <label>Dzień:</label><select id="late-date"></select>
+        <button class="btn-primary" id="late-save">Zapisz</button>
+      </div>
+    `);
   }
 
-  select.addEventListener('change', loadControl);
-  loadControl();
+  function openExtraModal(){
+    modalBackdrop(`
+      <div class="modal-head">
+        <div class="modal-title">Dodaj dodatkowe godziny</div>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <label>Pracownik:</label><select id="extra-user"></select>
+        <label>Dzień:</label><select id="extra-date"></select>
+        <label>Powód:</label><input id="extra-reason" type="text">
+        <label>Ilość godzin:</label><input id="extra-hours" type="number" min="1" max="12">
+        <button class="btn-primary" id="extra-save">Zapisz</button>
+      </div>
+    `);
+  }
+
+  function openAbsenceModal(){
+    modalBackdrop(`
+      <div class="modal-head">
+        <div class="modal-title">Zgłoś nieobecność</div>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <label>Pracownik:</label><select id="abs-user"></select>
+        <label>Dzień:</label><select id="abs-date"></select>
+        <label>Powód:</label><input id="abs-reason" type="text">
+        <button class="btn-primary" id="abs-save">Zapisz</button>
+      </div>
+    `);
+  }
+
+  function openShiftModal(){
+    modalBackdrop(`
+      <div class="modal-head">
+        <div class="modal-title">Dodaj zmianę</div>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <label>Pracownik:</label><select id="shift-user"></select>
+        <label>Dzień:</label><select id="shift-date"></select>
+        <label>Powód:</label><input id="shift-reason" type="text">
+        <label>Godziny:</label>
+        <div style="display:flex;gap:6px;">
+          <input id="shift-from" type="time"> do <input id="shift-to" type="time">
+        </div>
+        <button class="btn-primary" id="shift-save">Zapisz</button>
+      </div>
+    `);
+  }
+
+  // ---- привязки кнопок ----
+  document.getElementById('btn-late')?.addEventListener('click', openLateModal);
+  document.getElementById('btn-extra')?.addEventListener('click', openExtraModal);
+  document.getElementById('btn-absence')?.addEventListener('click', openAbsenceModal);
+  document.getElementById('btn-shift')?.addEventListener('click', openShiftModal);
 })();
