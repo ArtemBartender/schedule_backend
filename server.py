@@ -133,6 +133,34 @@ class Shift(db.Model):
             'coord_lounge': self.coord_lounge,
         }
 
+# --- модель контроля (рядом с другими моделями) ---
+class ControlEvent(db.Model):
+    __tablename__ = 'control_events'
+    id            = db.Column(db.Integer, primary_key=True)
+    kind          = db.Column(db.String(20), nullable=False)  # 'late' | 'extra' | 'absence' | 'manual_shift'
+    user_id       = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    event_date    = db.Column(db.Date, nullable=False)
+    reason        = db.Column(db.Text, nullable=True)
+    hours         = db.Column(db.Numeric(5,2), nullable=True)  # для extra
+    time_from     = db.Column(db.String(5), nullable=True)     # HH:MM (manual_shift)
+    time_to       = db.Column(db.String(5), nullable=True)     # HH:MM (manual_shift)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at    = db.Column(db.DateTime(timezone=True), server_default=func.now())
+
+    user         = db.relationship('User', foreign_keys=[user_id])
+    created_by   = db.relationship('User', foreign_keys=[created_by_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'kind': self.kind, 'user_id': self.user_id,
+            'user': self.user.full_name if self.user else None,
+            'date': self.event_date.isoformat(),
+            'reason': self.reason,
+            'hours': float(self.hours) if self.hours is not None else None,
+            'time_from': self.time_from, 'time_to': self.time_to,
+            'created_by': self.created_by.full_name if self.created_by else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class SwapProposal(db.Model):
@@ -203,6 +231,21 @@ with app.app_context():
         except Exception as e:
             db.session.rollback()
             app.logger.warning(f"skip: {e}")
+        # ensure control_events
+    if 'control_events' not in insp.get_table_names():
+        _exec("""
+            CREATE TABLE IF NOT EXISTS control_events(
+              id SERIAL PRIMARY KEY,
+              kind VARCHAR(20) NOT NULL,
+              user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              event_date DATE NOT NULL,
+              reason TEXT,
+              hours NUMERIC(5,2),
+              time_from VARCHAR(5),
+              time_to VARCHAR(5),
+              created_by_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              created_at TIMESTAMPTZ DEFAULT NOW()
+            )""", "control_events ensured")
 
     # ensure columns on users
     if 'users' in insp.get_table_names():
@@ -330,6 +373,10 @@ def _norm(s: str) -> str:
 COORDINATORS_DEFAULT_NORM = {_norm(name) for name in COORDINATORS_DEFAULT}
 ZMIWAKI_DEFAULT_NORM = {_norm(name) for name in ZMIWAKI_DEFAULT}
 
+def _is_coord_or_admin(u: User|None) -> bool:
+    if not u: return False
+    role = (u.role or '').lower()
+    return role in ('admin','coordinator') or is_coordinator_user(u)
 
 def is_coordinator_user(user: User | None) -> bool:
     if not user:
@@ -744,6 +791,161 @@ def me_settings_set():
         db.session.rollback()
         return jsonify({'error': f'Błąd zapisu ustawień: {e}'}), 400
 
+
+@app.post('/api/control/late')
+@jwt_required()
+def control_add_late():
+    me = current_user()
+    if not _is_coord_or_admin(me):
+        return jsonify({'error':'Forbidden'}), 403
+    data = request.get_json(force=True) or {}
+    uid  = int(data.get('user_id') or 0)
+    date_iso = (data.get('date') or '').strip()
+    reason   = (data.get('reason') or '').strip()
+    try:
+        d = datetime.fromisoformat(date_iso).date()
+    except Exception:
+        return jsonify({'error':'Bad date'}), 400
+    ev = ControlEvent(kind='late', user_id=uid, event_date=d, reason=reason, created_by_id=me.id)
+    db.session.add(ev); db.session.commit()
+    return jsonify({'ok': True, 'event': ev.to_dict()})
+    
+
+@app.post('/api/control/extra')
+@jwt_required()
+def control_add_extra():
+    me = current_user()
+    if not _is_coord_or_admin(me):
+        return jsonify({'error':'Forbidden'}), 403
+    data = request.get_json(force=True) or {}
+    uid = int(data.get('user_id') or 0)
+    date_iso = (data.get('date') or '').strip()
+    reason = (data.get('reason') or '').strip()
+    hours  = float(data.get('hours') or 0)
+    if hours <= 0:
+        return jsonify({'error':'Podaj poprawną liczbę godzin'}), 400
+    try:
+        d = datetime.fromisoformat(date_iso).date()
+    except Exception:
+        return jsonify({'error':'Bad date'}), 400
+    ev = ControlEvent(kind='extra', user_id=uid, event_date=d, reason=reason, hours=hours, created_by_id=me.id)
+    db.session.add(ev); db.session.commit()
+    return jsonify({'ok': True, 'event': ev.to_dict()})
+
+
+@app.post('/api/control/absence')
+@jwt_required()
+def control_add_absence():
+    me = current_user()
+    if not _is_coord_or_admin(me):
+        return jsonify({'error':'Forbidden'}), 403
+    data = request.get_json(force=True) or {}
+    uid = int(data.get('user_id') or 0)
+    date_iso = (data.get('date') or '').strip()
+    reason = (data.get('reason') or '').strip()
+    try:
+        d = datetime.fromisoformat(date_iso).date()
+    except Exception:
+        return jsonify({'error':'Bad date'}), 400
+    ev = ControlEvent(kind='absence', user_id=uid, event_date=d, reason=reason, created_by_id=me.id)
+    db.session.add(ev); db.session.commit()
+    return jsonify({'ok': True, 'event': ev.to_dict()})
+
+
+@app.post('/api/control/add-shift')
+@jwt_required()
+def control_add_shift():
+    me = current_user()
+    if not _is_coord_or_admin(me):
+        return jsonify({'error':'Forbidden'}), 403
+    data = request.get_json(force=True) or {}
+    uid = int(data.get('user_id') or 0)
+    date_iso = (data.get('date') or '').strip()
+    reason = (data.get('reason') or '').strip()
+    t_from  = (data.get('from') or '').strip()  # 'HH:MM'
+    t_to    = (data.get('to') or '').strip()
+
+    try:
+        d = datetime.fromisoformat(date_iso).date()
+    except Exception:
+        return jsonify({'error':'Bad date'}), 400
+
+    # запретить дубль второй смены в день
+    if _has_shift(uid, d):
+        return jsonify({'error':'Ten pracownik ma już zmianę w tym dniu.'}), 400
+
+    # вычислим часы
+    def _parse_hhmm(s):
+        try: h,m = map(int, s.split(':')); return h*60+m
+        except: return None
+    start = _parse_hhmm(t_from); end = _parse_hhmm(t_to)
+    if start is None or end is None:
+        return jsonify({'error':'Podaj godziny HH:MM'}), 400
+    if end < start: end += 24*60
+    hours = round((end-start)/60.0, 2)
+
+    # создаём смену (без кода, но с worked_hours)
+    sh = Shift(user_id=uid, shift_date=d, shift_code='X', hours=None, worked_hours=hours, work_note=reason or None)
+    db.session.add(sh)
+
+    ev = ControlEvent(kind='manual_shift', user_id=uid, event_date=d, reason=reason,
+                      time_from=t_from, time_to=t_to, hours=hours, created_by_id=me.id)
+    db.session.add(ev)
+    db.session.commit()
+    return jsonify({'ok': True, 'event': ev.to_dict(), 'shift_id': sh.id})
+
+
+
+@app.get('/api/control/summary')
+@jwt_required()
+def control_summary():
+    # любой залогиненный может смотреть
+    month = (request.args.get('month') or '').strip()  # 'YYYY-MM'
+    if not month:
+        today = _date.today(); y, m = today.year, today.month
+    else:
+        y, m = map(int, month.split('-'))
+    start = _date(y, m, 1)
+    end   = _date(y, m, monthrange(y, m)[1])
+
+    # события
+    evs = (ControlEvent.query
+           .filter(ControlEvent.event_date>=start, ControlEvent.event_date<=end)
+           .order_by(ControlEvent.event_date.asc(), ControlEvent.created_at.asc())
+           .all())
+    events = [e.to_dict() for e in evs]
+
+    # укомплектованность
+    # считаем списки людей по каждому дню и слоту
+    q = (db.session.query(Shift.shift_date, Shift.shift_code, func.count(Shift.id))
+         .filter(Shift.shift_date>=start, Shift.shift_date<=end)
+         .group_by(Shift.shift_date, Shift.shift_code))
+    counts = {}
+    for d, code, cnt in q.all():
+        key = d.isoformat()
+        slot = 'evening' if str(code or '').strip().upper().startswith('2') else 'morning'
+        c = counts.setdefault(key, {'morning':0,'evening':0})
+        c[slot] += int(cnt or 0)
+
+    NORM = 12
+    staffing = []
+    cur = start
+    while cur <= end:
+        iso = cur.isoformat()
+        c = counts.get(iso, {'morning':0,'evening':0})
+        staffing.append({
+            'date': iso,
+            'morning': c['morning'],
+            'evening': c['evening'],
+            'morning_delta': c['morning'] - NORM,
+            'evening_delta': c['evening'] - NORM,
+        })
+        cur = cur + timedelta(days=1)
+
+    return jsonify({'events': events, 'staffing': staffing})
+
+
+
 @app.get('/api/my-stats')
 @jwt_required()
 def my_stats():
@@ -807,6 +1009,15 @@ def my_stats():
         'net_all': net_all,
         'daily': daily
     })
+
+
+@app.get('/api/users')
+@jwt_required()
+def users_list():
+    # любой залогиненный может читать список имён
+    rows = User.query.order_by(User.full_name.asc()).all()
+    return jsonify([{'id': u.id, 'full_name': u.full_name} for u in rows])
+
 
 # ---------------------------------
 # Shifts & notes
@@ -2727,6 +2938,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
