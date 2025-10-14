@@ -1,6 +1,20 @@
 (function initControl(){
   'use strict';
   if (!document.body.classList.contains('page-control')) return;
+  // проверка роли
+(async ()=>{
+  try {
+    const me = await window.api('/api/me');
+    if (!['admin','coordinator'].includes((me.role||'').toLowerCase())) {
+      document.body.innerHTML = '<div style="padding:40px;text-align:center">🚫 Dostęp tylko dla koordynatorów i adminów.</div>';
+      return;
+    }
+  } catch {
+    location.href = '/'; // если токен битый — логин
+    return;
+  }
+})();
+
 
   if (typeof window.initMenu === 'function') window.initMenu();
 
