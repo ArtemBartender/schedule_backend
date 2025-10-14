@@ -48,12 +48,13 @@
     const m = el('div','modal-backdrop');
     m.innerHTML = `<div class="modal">${html}</div>`;
     document.body.appendChild(m);
-    const close = ()=> m.remove();
+    const doClose = ()=> m.remove();   // ← раньше было doClose()
     m.addEventListener('click', e=>{
-      if (e.target===m || e.target.classList.contains('modal-close')) close();
+      if (e.target===m || e.target.classList.contains('modal-close')) doClose();
     });
-    return {root:m, close};
+    return {root:m, doClose};
   }
+
 
   // ======= MODALS =======
 
@@ -85,7 +86,7 @@
           reason: root.querySelector('#late-reason').value || ''
         })});
         toast.success('Zapisano spóźnienie');
-        close(); await renderSummary();
+        doClose(); await renderSummary();
       }catch(e){ toast.error(e.message || 'Błąd'); }
     });
   }
@@ -120,7 +121,7 @@
           hours
         })});
         toast.success('Zapisano dodatkowe godziny');
-        close(); await renderSummary();
+        doClose(); await renderSummary();
       }catch(e){ toast.error(e.message || 'Błąd'); }
     });
   }
@@ -151,7 +152,7 @@
           reason: root.querySelector('#abs-reason').value || ''
         })});
         toast.success('Zapisano nieobecność');
-        close(); await renderSummary();
+        doClose(); await renderSummary();
       }catch(e){ toast.error(e.message || 'Błąd'); }
     });
   }
@@ -190,7 +191,7 @@
           from, to
         })});
         toast.success('Dodano zmianę');
-        close(); await renderSummary();
+        doClose(); await renderSummary();
       }catch(e){ toast.error(e.message || 'Błąd'); }
     });
   }
