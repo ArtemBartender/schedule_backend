@@ -39,72 +39,70 @@
   }
 
   // ====== API with retry + keep-alive ======
-  async function api(path, opts={}) {
-    const headers = Object.assign({}, opts.headers || {});
-    const t = getToken(); if (t && !headers.Authorization) headers.Authorization = 'Bearer ' + t;
-    if (!('Content-Type' in headers) && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+async function api(path, opts = {}) {
+  const token = localStorage.getItem('token');
+  const headers = Object.assign({'Content-Type': 'application/json'}, opts.headers || {});
+  if (token) headers['Authorization'] = 'Bearer ' + token;
 
-    const run = async () => {
-      const res = await fetch(path, { ...opts, headers, cache:'no-store' });
-      const ct = res.headers.get('content-type') || '';
-      const body = ct.includes('application/json') ? await res.json().catch(()=>({})) : await res.text().catch(()=> '');
-      if (!res.ok){
-        if (res.status === 401) {
-          try { clearToken(); } catch(_){}
-          const redirect = encodeURIComponent(window.location.pathname + window.location.search);
-          window.location.href = '/?redirect=' + redirect;
-          return;
-        }
-        const err = new Error(body?.error || `Błąd ${res.status}`);
-        err.status = res.status; throw err;
-      }
-      return body;
-    };
+  const res = await fetch(path, { ...opts, headers, cache: 'no-store' });
+  const ct = res.headers.get('content-type') || '';
+  const body = ct.includes('application/json')
+    ? await res.json().catch(() => ({}))
+    : await res.text().catch(() => '');
 
-    try { return await run(); }
-    catch(e){
-      if (e.status === 500 || e.status === 503){
-        await new Promise(r=>setTimeout(r, 800));
-        return await run();
-      }
-      throw e;
+  if (!res.ok) {
+    if (res.status === 401) {
+      console.warn('401 Unauthorized → probably expired token');
+      localStorage.removeItem('token');
+      alert('Sesja wygasła. Zaloguj się ponownie.');
+      window.location.href = '/login';
+      throw new Error('Unauthorized');
     }
+    const err = new Error(body?.error || `Błąd ${res.status}`);
+    err.status = res.status;
+    throw err;
   }
 
-  // API helper без токена (для login/register/reset)
-  async function apiAuth(path, body){
-    const res = await fetch(path, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body||{})
-    });
-    const data = await res.json().catch(()=> ({}));
-    if (!res.ok) throw new Error(data.error || ('HTTP '+res.status));
-    return data;
+  return body;
+}
+
+// API helper без токена (для login/register/reset)
+async function apiAuth(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+  return data;
+}
+
+// отдать наружу то, что нужно другим скриптам
+window.api = api;
+window.getToken = getToken;
+window.setToken = setToken;
+window.clearToken = clearToken;
+window.currentClaims = currentClaims;
+
+// keep-alive
+(function keepAlive() {
+  const ping = () => fetch('/api/health', { cache: 'no-store' }).catch(() => {});
+  let timer = null;
+  function start() {
+    clearInterval(timer);
+    ping();
+    timer = setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine) ping();
+    }, 4 * 60 * 1000);
   }
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') start();
+  });
+  window.addEventListener('focus', start);
+  start();
+})();
 
-  // отдать наружу то, что нужно другим скриптам
-  window.api = api;
-  window.getToken = getToken;
-  window.setToken = setToken;
-  window.clearToken = clearToken;
-  window.currentClaims = currentClaims;
-
-  // keep-alive
-  (function keepAlive(){
-    const ping = () => fetch('/api/health', { cache:'no-store' }).catch(()=>{});
-    let timer = null;
-    function start(){
-      clearInterval(timer);
-      ping();
-      timer = setInterval(() => {
-        if (document.visibilityState === 'visible' && navigator.onLine) ping();
-      }, 4*60*1000);
-    }
-    window.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible') start(); });
-    window.addEventListener('focus', start);
-    start();
-  })();
 
   // =============== AUTH (login/register) ===============
   (function initAuth(){
@@ -797,4 +795,5 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
     }
   });
 })();
+
 
