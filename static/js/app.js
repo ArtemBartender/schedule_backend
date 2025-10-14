@@ -39,37 +39,34 @@
   }
 
   // ====== API with retry + keep-alive ======
-  async function api(path, opts={}) {
-    const headers = Object.assign({}, opts.headers || {});
-    const t = getToken(); if (t && !headers.Authorization) headers.Authorization = 'Bearer ' + t;
-    if (!('Content-Type' in headers) && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+async function api(path, opts = {}) {
+  const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+  const headers = Object.assign({'Content-Type': 'application/json'}, opts.headers || {});
+  if (token) headers['Authorization'] = 'Bearer ' + token;
 
-    const run = async () => {
-      const res = await fetch(path, { ...opts, headers, cache:'no-store' });
-      const ct = res.headers.get('content-type') || '';
-      const body = ct.includes('application/json') ? await res.json().catch(()=>({})) : await res.text().catch(()=> '');
-      if (!res.ok){
-        if (res.status === 401) {
-          try { clearToken(); } catch(_){}
-          const redirect = encodeURIComponent(window.location.pathname + window.location.search);
-          window.location.href = '/?redirect=' + redirect;
-          return;
-        }
-        const err = new Error(body?.error || `Błąd ${res.status}`);
-        err.status = res.status; throw err;
-      }
-      return body;
-    };
+  const res = await fetch(path, { ...opts, headers, cache: 'no-store' });
+  const ct = res.headers.get('content-type') || '';
+  const body = ct.includes('application/json')
+    ? await res.json().catch(() => ({}))
+    : await res.text().catch(() => '');
 
-    try { return await run(); }
-    catch(e){
-      if (e.status === 500 || e.status === 503){
-        await new Promise(r=>setTimeout(r, 800));
-        return await run();
-      }
-      throw e;
+  if (!res.ok) {
+    if (res.status === 401) {
+      console.warn('401 Unauthorized → probably expired token');
+      localStorage.removeItem('access_token');
+      sessionStorage.removeItem('access_token');
+      alert('Sesja wygasła. Zaloguj się ponownie.');
+      window.location.href = '/';
+      throw new Error('Unauthorized');
     }
+    const err = new Error(body?.error || `Błąd ${res.status}`);
+    err.status = res.status;
+    throw err;
   }
+
+  return body;
+}
+
 
   // API helper без токена (для login/register/reset)
   async function apiAuth(path, body){
@@ -797,3 +794,4 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
     }
   });
 })();
+
