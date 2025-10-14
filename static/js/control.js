@@ -5,10 +5,13 @@
 (async ()=>{
   try {
     const me = await window.api('/api/me');
-    if (!['admin','coordinator'].includes((me.role||'').toLowerCase())) {
+    const role = (me.role || '').toLowerCase();
+    
+    if (!role.includes('admin') && !role.includes('coord')) {
       document.body.innerHTML = '<div style="padding:40px;text-align:center">🚫 Dostęp tylko dla koordynatorów i adminów.</div>';
       return;
     }
+
   } catch {
     location.href = '/'; // если токен битый — логин
     return;
