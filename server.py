@@ -2919,12 +2919,7 @@ def market_page():
     return render_template('market.html')
 
 @app.get('/control')
-@jwt_required()
 def control_page():
-    # Только координаторы/админы
-    u = current_user()
-    if not _is_coord_or_admin(u):
-        return redirect('/start', 302)
     return render_template('control.html')
 
 
@@ -2942,6 +2937,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
