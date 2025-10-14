@@ -1,19 +1,30 @@
-{% extends "base.html" %}
-{% block title %}Kontrola zmian{% endblock %}
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kontrola zmian i frekwencji</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="color-scheme" content="light dark">
+</head>
 
-{% block content %}
 <body class="page-control">
-  <div class="topbar">
-    <div class="left">
-      <button id="menu-toggle">☰</button>
-      <h1>Kontrola zmian i frekwencji</h1>
-    </div>
-    <div class="right">
-      <select id="month-select" class="btn-secondary"></select>
-    </div>
-  </div>
+  <header class="topbar">
+    <div class="brand">Kontrola zmian</div>
+    <div class="spacer"></div>
+    <button id="menu-toggle" aria-label="Menu">☰</button>
+    <nav id="menu-panel" class="menu-panel" hidden>
+      <a href="/start" class="menu-item">Start</a>
+      <a href="/dashboard" class="menu-item">Kalendarz</a>
+      <a href="/stats" class="menu-item">Statystyka</a>
+      <a href="/market" class="menu-item">Rynek</a>
+      <a href="/admin" id="menu-admin" class="menu-item" hidden>Admin</a>
+      <button type="button" id="menu-logout" class="menu-item">Wyloguj</button>
+    </nav>
+  </header>
 
-  <div class="container">
+  <main class="container">
     <div class="cards-row">
       <div class="card kpi-card">
         <div class="kpi-label">Zamiany</div>
@@ -44,8 +55,9 @@
     <div class="tab-content hidden" id="tab-extra"></div>
     <div class="tab-content hidden" id="tab-missing"></div>
     <div class="tab-content hidden" id="tab-imbalance"></div>
-  </div>
+  </main>
 
+  <script src="/static/js/app.js"></script>
   <script src="/static/js/control.js"></script>
 </body>
-{% endblock %}
+</html>
