@@ -198,7 +198,10 @@
 
   // --- Удаление событий ---
   function onDeleteEvent(eventId) {
-    const {root, doClose} = openModal(`
+    const modal = openModal(`
+    const root = modal.root;
+    const doClose = modal.doClose;
+
       <div class="modal-head"><div class="modal-title">Usuń zdarzenie</div><button class="modal-close">×</button></div>
       <div class="modal-body">
         <p>Podaj powód usunięcia:</p>
