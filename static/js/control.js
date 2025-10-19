@@ -290,9 +290,9 @@
           <div>
             <span class="tag tag-small">${mapName[e.kind]||e.kind}</span>
             <b>${e.user||''}</b> — ${e.date}
-            ${e.hours?` · ${e.hours}h`:''}
-            ${e.time_from?` · ${e.time_from}-${e.time_to}`:''}
-            ${e.delay_minutes?` · spóźnienie ${e.delay_minutes} min`:''}
+            ${e.hours ? ` · ${e.hours}h` : ''}
+            ${e.time_from ? ` · ${e.time_from}-${e.time_to}` : ''}
+            ${e.delay_minutes ? ` · spóźnienie ${e.delay_minutes} min` : ''}
           </div>
           <div class="row center" style="gap:6px;">
             <div class="muted small">${e.reason?e.reason:''}</div>
