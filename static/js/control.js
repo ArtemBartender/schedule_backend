@@ -1,7 +1,6 @@
 (function initControl(){
   'use strict';
   if (!document.body.classList.contains('page-control')) return;
-
   if (typeof window.initMenu === 'function') window.initMenu();
 
   const content = document.getElementById('control-content');
@@ -51,8 +50,8 @@
 
   // ======= MODALS =======
 
-  async function onLate() {
-  const modal = openModal(`
+  async function onLate(){
+    const modal = openModal(`
       <div class="modal-head">
         <div class="modal-title">Dodaj spóźnienie</div>
         <button class="modal-close">×</button>
@@ -71,39 +70,37 @@
           <button class="btn-primary" id="late-save">Zapisz</button>
         </div>
       </div>
-  `);
+    `);
 
-  const root = modal.root;
-  const doClose = modal.doClose;
+    const root = modal.root;
+    const doClose = modal.doClose;
 
-  const u = root.querySelector('#late-user');
-  const d = root.querySelector('#late-date');
-  fillUsers(u);
-  buildDaysSelect(d);
+    const u = root.querySelector('#late-user');
+    const d = root.querySelector('#late-date');
+    fillUsers(u);
+    buildDaysSelect(d);
 
-  root.querySelector('#late-save').addEventListener('click', async () => {
-    try {
-      await api('/api/control/late', {
-        method: 'POST',
-        body: JSON.stringify({
-          user_id: Number(u.value),
-          date: d.value,
-          reason: root.querySelector('#late-reason').value || '',
-          delay_minutes: parseInt(root.querySelector('#late-minutes').value || '0'),
-          time_from: root.querySelector('#late-from').value,
-          time_to: root.querySelector('#late-to').value
-        })
-      });
-      toast.success('Zapisano spóźnienie');
-      doClose();
-      await renderSummary();
-    } catch (e) {
-      toast.error(e.message || 'Błąd');
-    }
-  });
-} // ← вот эта скобка правильная, только одна!
-
-
+    root.querySelector('#late-save').addEventListener('click', async ()=>{
+      try{
+        await api('/api/control/late', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id: Number(u.value),
+            date: d.value,
+            reason: root.querySelector('#late-reason').value || '',
+            delay_minutes: parseInt(root.querySelector('#late-minutes').value || '0'),
+            time_from: root.querySelector('#late-from').value,
+            time_to: root.querySelector('#late-to').value
+          })
+        });
+        toast.success('Zapisano spóźnienie');
+        doClose();
+        await renderSummary();
+      } catch(e) {
+        toast.error(e.message || 'Błąd');
+      }
+    });
+  }
 
   async function onExtra(){
     const {root, doClose} = openModal(`
@@ -119,22 +116,26 @@
         </div>
       </div>
     `);
+
     const u = root.querySelector('#extra-user');
     const d = root.querySelector('#extra-date');
-    fillUsers(u); buildDaysSelect(d);
+    fillUsers(u);
+    buildDaysSelect(d);
 
     root.querySelector('#extra-save').addEventListener('click', async ()=>{
       const hours = parseFloat(root.querySelector('#extra-hours').value || '0');
       if (!(hours>0)) return toast.error('Podaj ilość godzin');
       try{
         await api('/api/control/extra', {method:'POST', body: JSON.stringify({
-          user_id:Number(u.value), date:d.value,
+          user_id:Number(u.value),
+          date:d.value,
           reason: root.querySelector('#extra-reason').value || '',
           hours
         })});
         toast.success('Zapisano dodatkowe godziny');
-        doClose(); await renderSummary();
-      }catch(e){ toast.error(e.message || 'Błąd'); }
+        doClose();
+        await renderSummary();
+      } catch(e){ toast.error(e.message || 'Błąd'); }
     });
   }
 
@@ -151,19 +152,23 @@
         </div>
       </div>
     `);
+
     const u = root.querySelector('#abs-user');
     const d = root.querySelector('#abs-date');
-    fillUsers(u); buildDaysSelect(d);
+    fillUsers(u);
+    buildDaysSelect(d);
 
     root.querySelector('#abs-save').addEventListener('click', async ()=>{
       try{
         await api('/api/control/absence', {method:'POST', body: JSON.stringify({
-          user_id:Number(u.value), date:d.value,
+          user_id:Number(u.value),
+          date:d.value,
           reason: root.querySelector('#abs-reason').value || ''
         })});
         toast.success('Zapisano nieobecność');
-        doClose(); await renderSummary();
-      }catch(e){ toast.error(e.message || 'Błąd'); }
+        doClose();
+        await renderSummary();
+      } catch(e){ toast.error(e.message || 'Błąd'); }
     });
   }
 
@@ -184,8 +189,11 @@
         </div>
       </div>
     `);
-    const u = root.querySelector('#sh-user'); const d = root.querySelector('#sh-date');
-    fillUsers(u); buildDaysSelect(d);
+
+    const u = root.querySelector('#sh-user');
+    const d = root.querySelector('#sh-date');
+    fillUsers(u);
+    buildDaysSelect(d);
 
     root.querySelector('#sh-save').addEventListener('click', async ()=>{
       const from = root.querySelector('#sh-from').value;
@@ -193,58 +201,51 @@
       if (!from || !to) return toast.error('Podaj godziny');
       try{
         await api('/api/control/add-shift', {method:'POST', body: JSON.stringify({
-          user_id:Number(u.value), date:d.value,
+          user_id:Number(u.value),
+          date:d.value,
           reason: root.querySelector('#sh-reason').value || '',
           from, to
         })});
         toast.success('Dodano zmianę');
-        doClose(); await renderSummary();
-      }catch(e){ toast.error(e.message || 'Błąd'); }
+        doClose();
+        await renderSummary();
+      } catch(e){ toast.error(e.message || 'Błąd'); }
     });
   }
 
-  // --- Удаление событий ---
-  function onDeleteEvent(eventId) {
-  const modal = openModal(`
-    <div class="modal-head">
-      <div class="modal-title">Usuń zdarzenie</div>
-      <button class="modal-close">×</button>
-    </div>
-    <div class="modal-body">
-      <p>Podaj powód usunięcia:</p>
-      <textarea id="delete-reason" rows="3" style="width:100%"></textarea>
-      <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
-        <button class="btn-secondary modal-close">Anuluj</button>
-        <button class="btn-danger" id="confirm-delete">Usuń</button>
+  function onDeleteEvent(eventId){
+    const modal = openModal(`
+      <div class="modal-head">
+        <div class="modal-title">Usuń zdarzenie</div>
+        <button class="modal-close">×</button>
       </div>
-    </div>
-  `);
+      <div class="modal-body">
+        <p>Podaj powód usunięcia:</p>
+        <textarea id="delete-reason" rows="3" style="width:100%"></textarea>
+        <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn-secondary modal-close">Anuluj</button>
+          <button class="btn-danger" id="confirm-delete">Usuń</button>
+        </div>
+      </div>
+    `);
 
-  const root = modal.root;
-  const doClose = modal.doClose;
+    const root = modal.root;
+    const doClose = modal.doClose;
 
-  root.querySelector('#confirm-delete').addEventListener('click', async () => {
-    const reason = root.querySelector('#delete-reason').value.trim();
-    if (!reason) return toast.error('Podaj powód!');
-
-    try {
-      await api('/api/control/delete', {
-        method: 'POST',
-        body: JSON.stringify({ id: eventId, reason })
-      });
-      toast.success('Zdarzenie usunięte');
-
-      // просто вызываем функцию, без .call()
-      doClose();
-
-      // небольшой таймаут для плавности (DOM успеет обновиться)
-      setTimeout(() => renderSummary(), 200);
-    } catch (e) {
-      toast.error(e.message || 'Błąd przy usuwaniu');
-    }
-  });
-}
-
+    root.querySelector('#confirm-delete').addEventListener('click', async ()=>{
+      const reason = root.querySelector('#delete-reason').value.trim();
+      if (!reason) return toast.error('Podaj powód!');
+      try{
+        await api('/api/control/delete', {
+          method:'POST',
+          body: JSON.stringify({ id: eventId, reason })
+        });
+        toast.success('Zdarzenie usunięte');
+        doClose();
+        setTimeout(()=>renderSummary(),200);
+      } catch(e){ toast.error(e.message || 'Błąd przy usuwaniu'); }
+    });
+  }
 
   // ======= Summary =======
   async function renderSummary(){
@@ -304,7 +305,6 @@
       evWrap.appendChild(list);
     }
 
-    // staffing
     const st = $('#staffing-table');
     const tbl = el('table','table');
     tbl.innerHTML = `<thead><tr><th>Data</th><th>Rano</th><th>Δ</th><th>Popo</th><th>Δ</th></tr></thead><tbody></tbody>`;
@@ -322,7 +322,6 @@
     });
     st.appendChild(tbl);
 
-    // Deleted log
     const logBox = el('div','card');
     logBox.style.marginTop = '12px';
     logBox.innerHTML = `<h3>Usunięte zdarzenia</h3><div id="deleted-log"></div>`;
