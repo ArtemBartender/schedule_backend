@@ -52,10 +52,7 @@
   // ======= MODALS =======
 
   async function onLate(){
-    const modal = openModal(`
-    const root = modal.root;
-    const doClose = modal.doClose;
-
+  const modal = openModal(`
       <div class="modal-head">
         <div class="modal-title">Dodaj spóźnienie</div>
         <button class="modal-close">×</button>
@@ -74,29 +71,38 @@
           <button class="btn-primary" id="late-save">Zapisz</button>
         </div>
       </div>
-    `);
-    const u = root.querySelector('#late-user');
-    const d = root.querySelector('#late-date');
-    fillUsers(u); buildDaysSelect(d);
+  `);
 
-    root.querySelector('#late-save').addEventListener('click', async ()=>{
-      try{
-        await api('/api/control/late', {
-          method:'POST',
-          body: JSON.stringify({
-            user_id: Number(u.value),
-            date: d.value,
-            reason: root.querySelector('#late-reason').value || '',
-            delay_minutes: parseInt(root.querySelector('#late-minutes').value || '0'),
-            time_from: root.querySelector('#late-from').value,
-            time_to: root.querySelector('#late-to').value
-          })
-        });
-        toast.success('Zapisano spóźnienie');
-        doClose(); await renderSummary();
-      }catch(e){ toast.error(e.message || 'Błąd'); }
-    });
-  }
+  const root = modal.root;
+  const doClose = modal.doClose;
+
+  const u = root.querySelector('#late-user');
+  const d = root.querySelector('#late-date');
+  fillUsers(u);
+  buildDaysSelect(d);
+
+  root.querySelector('#late-save').addEventListener('click', async () => {
+    try {
+      await api('/api/control/late', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: Number(u.value),
+          date: d.value,
+          reason: root.querySelector('#late-reason').value || '',
+          delay_minutes: parseInt(root.querySelector('#late-minutes').value || '0'),
+          time_from: root.querySelector('#late-from').value,
+          time_to: root.querySelector('#late-to').value
+        })
+      });
+      toast.success('Zapisano spóźnienie');
+      doClose();
+      await renderSummary();
+    } catch (e) {
+      toast.error(e.message || 'Błąd');
+    }
+  });
+}
+
 
   async function onExtra(){
     const {root, doClose} = openModal(`
