@@ -216,6 +216,25 @@
         <div id="staffing-table"></div>
       </div>
     `;
+    const logBox = el('div','card');
+    logBox.style.marginTop = '12px';
+    logBox.innerHTML = `<h3>Usunięte zdarzenia</h3><div id="deleted-log"></div>`;
+    box.appendChild(logBox);
+    
+    try {
+      const log = await api('/api/control/deleted');
+      const wrap = logBox.querySelector('#deleted-log');
+      if (!log.length) wrap.innerHTML = '<div class="muted">Brak usunięć</div>';
+      else {
+        const list = el('div','col');
+        log.forEach(l=>{
+          const div = el('div','small muted');
+          div.textContent = `${l.deleted_at} — ${l.user_name} usunął zdarzenie #${l.event_id}: ${l.reason}`;
+          list.appendChild(div);
+        });
+        wrap.appendChild(list);
+      }
+    } catch(e){ console.warn('no log', e); }
 
     const title = new Intl.DateTimeFormat('pl-PL',{month:'long', year:'numeric'}).format(STATE.ym);
     $('#month-title').textContent = title.charAt(0).toUpperCase()+title.slice(1);
