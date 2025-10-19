@@ -9,7 +9,7 @@ import secrets
 import unicodedata
 from openpyxl import load_workbook
 from flask import send_file
-from sqlalchemy import delete, extract
+from sqlalchemy import delete, extract, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from datetime import datetime, timezone, timedelta
@@ -2973,6 +2973,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
