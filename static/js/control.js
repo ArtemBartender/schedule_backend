@@ -68,6 +68,12 @@
         <label>Pracownik</label><select id="late-user"></select>
         <label>Dzień</label><select id="late-date"></select>
         <label>Powód (opcjonalnie)</label><input id="late-reason" type="text">
+        <label>Na ile minut spóźnienia</label><input id="late-minutes" type="number" min="1">
+        <label>Faktyczne godziny pracy</label>
+        <div style="display:flex; gap:6px;">
+          <input id="late-from" type="time"> do <input id="late-to" type="time">
+        </div>
+
         <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
           <button class="btn-secondary modal-close">Anuluj</button>
           <button class="btn-primary" id="late-save">Zapisz</button>
