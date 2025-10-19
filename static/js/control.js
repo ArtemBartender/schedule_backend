@@ -212,30 +212,31 @@
       </div>
     </div>
   `);
-// 👉 вот эти две строки обязательны
-const root = modal.root;
-const doClose = modal.doClose;
 
-root.querySelector('#confirm-delete').addEventListener('click', async () => {
-  const reason = root.querySelector('#delete-reason').value.trim();
-  if (!reason) return toast.error('Podaj powód!');
-  try {
-    await api('/api/control/delete', {
-      method: 'POST',
-      body: JSON.stringify({ id: eventId, reason })
-    });
-    toast.success('Zdarzenie usunięte');
+  const root = modal.root;
+  const doClose = modal.doClose;
 
-    // ✅ ключевой момент — вызываем метод с правильным контекстом
-    if (typeof doClose === 'function') doClose.call(modal);
+  root.querySelector('#confirm-delete').addEventListener('click', async () => {
+    const reason = root.querySelector('#delete-reason').value.trim();
+    if (!reason) return toast.error('Podaj powód!');
 
-    // небольшой таймаут, чтобы DOM обновился плавно
-    setTimeout(() => renderSummary(), 200);
-  } 
-  catch (e) {
-    toast.error(e.message || 'Błąd przy usuwaniu');
-  }
-});
+    try {
+      await api('/api/control/delete', {
+        method: 'POST',
+        body: JSON.stringify({ id: eventId, reason })
+      });
+      toast.success('Zdarzenie usunięte');
+
+      // просто вызываем функцию, без .call()
+      doClose();
+
+      // небольшой таймаут для плавности (DOM успеет обновиться)
+      setTimeout(() => renderSummary(), 200);
+    } catch (e) {
+      toast.error(e.message || 'Błąd przy usuwaniu');
+    }
+  });
+}
 
 
   // ======= Summary =======
