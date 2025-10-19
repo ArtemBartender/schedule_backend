@@ -2881,23 +2881,25 @@ def api_coord_panel_save():
 
 
 
+from sqlalchemy import text  # <--- добавь рядом с другими импортами
+
 @app.route('/api/control/delete', methods=['POST'])
 @jwt_required()
 def control_delete():
     data = request.get_json()
     event_id = data.get('id')
     reason = data.get('reason', '').strip()
-    user = get_jwt_identity()
+    user = get_jwt_identity()  # теперь определён ✅
 
     if not event_id or not reason:
         return jsonify({'error': 'Missing id or reason'}), 400
 
-    db.session.execute("""
+    db.session.execute(text("""
         INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
         VALUES (:eid, :uid, :reason, NOW())
-    """, {'eid': event_id, 'uid': user, 'reason': reason})
+    """), {'eid': event_id, 'uid': user, 'reason': reason})
 
-    db.session.execute("DELETE FROM control_events WHERE id = :eid", {'eid': event_id})
+    db.session.execute(text("DELETE FROM control_events WHERE id = :eid"), {'eid': event_id})
     db.session.commit()
     return jsonify({'status': 'ok'})
 
@@ -2905,13 +2907,14 @@ def control_delete():
 @app.route('/api/control/deleted')
 @jwt_required()
 def control_deleted_list():
-    res = db.session.execute("""
+    res = db.session.execute(text("""
         SELECT c.event_id, u.full_name AS user_name, c.reason, c.deleted_at
         FROM control_deleted c
         JOIN users u ON c.deleted_by = u.id
         ORDER BY c.deleted_at DESC
-    """).mappings().all()
+    """)).mappings().all()
     return jsonify([dict(r) for r in res])
+
 
 
 
@@ -2973,6 +2976,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
