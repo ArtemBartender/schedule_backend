@@ -807,6 +807,10 @@ def control_add_late():
     except Exception:
         return jsonify({'error':'Bad date'}), 400
     ev = ControlEvent(kind='late', user_id=uid, event_date=d, reason=reason, created_by_id=me.id)
+    delay_minutes: parseInt(root.querySelector('#late-minutes').value || '0'),
+    time_from: root.querySelector('#late-from').value,
+    time_to: root.querySelector('#late-to').value
+
     db.session.add(ev); db.session.commit()
     return jsonify({'ok': True, 'event': ev.to_dict()})
     
@@ -2972,6 +2976,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
