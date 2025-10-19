@@ -807,28 +807,9 @@ def control_add_late():
     except Exception:
         return jsonify({'error':'Bad date'}), 400
     ev = ControlEvent(kind='late', user_id=uid, event_date=d, reason=reason, created_by_id=me.id)
-    delay_minutes: parseInt(root.querySelector('#late-minutes').value || '0'),
-    time_from: root.querySelector('#late-from').value,
-    time_to: root.querySelector('#late-to').value
-
     db.session.add(ev); db.session.commit()
     return jsonify({'ok': True, 'event': ev.to_dict()})
     
-
-
-@app.route('/api/control/deleted')
-@jwt_required()
-def control_deleted_list():
-    res = db.session.execute("""
-        SELECT c.id AS event_id, u.full_name AS user_name, c.reason, c.deleted_at
-        FROM control_deleted c
-        JOIN users u ON c.deleted_by = u.id
-        ORDER BY c.deleted_at DESC
-    """).mappings().all()
-    return jsonify([dict(r) for r in res])
-
-
-
 
 @app.post('/api/control/extra')
 @jwt_required()
@@ -913,26 +894,6 @@ def control_add_shift():
     db.session.commit()
     return jsonify({'ok': True, 'event': ev.to_dict(), 'shift_id': sh.id})
 
-@app.route('/api/control/delete', methods=['POST'])
-@jwt_required()
-def control_delete():
-    data = request.get_json()
-    event_id = data.get('id')
-    reason = data.get('reason', '').strip()
-    user = get_jwt_identity()
-
-    if not event_id or not reason:
-        return jsonify({'error': 'Missing id or reason'}), 400
-
-    # Логируем удаление в отдельную таблицу
-    db.session.execute("""
-        INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
-        VALUES (:eid, :uid, :reason, NOW())
-    """, {'eid': event_id, 'uid': user, 'reason': reason})
-
-    db.session.execute("DELETE FROM control_events WHERE id = :eid", {'eid': event_id})
-    db.session.commit()
-    return jsonify({'status': 'ok'})
 
 
 @app.get('/api/control/summary')
@@ -2918,6 +2879,43 @@ def api_coord_panel_save():
     return jsonify({'ok': True})
 
 
+
+
+@app.route('/api/control/delete', methods=['POST'])
+@jwt_required()
+def control_delete():
+    data = request.get_json()
+    event_id = data.get('id')
+    reason = data.get('reason', '').strip()
+    user = get_jwt_identity()
+
+    if not event_id or not reason:
+        return jsonify({'error': 'Missing id or reason'}), 400
+
+    db.session.execute("""
+        INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
+        VALUES (:eid, :uid, :reason, NOW())
+    """, {'eid': event_id, 'uid': user, 'reason': reason})
+
+    db.session.execute("DELETE FROM control_events WHERE id = :eid", {'eid': event_id})
+    db.session.commit()
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/control/deleted')
+@jwt_required()
+def control_deleted_list():
+    res = db.session.execute("""
+        SELECT c.event_id, u.full_name AS user_name, c.reason, c.deleted_at
+        FROM control_deleted c
+        JOIN users u ON c.deleted_by = u.id
+        ORDER BY c.deleted_at DESC
+    """).mappings().all()
+    return jsonify([dict(r) for r in res])
+``
+
+
+
 # ---------------------------------
 # Pages
 # ---------------------------------
@@ -2976,30 +2974,6 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
