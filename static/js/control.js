@@ -212,28 +212,30 @@
       </div>
     </div>
   `);
+// 👉 вот эти две строки обязательны
+const root = modal.root;
+const doClose = modal.doClose;
 
-  // 👉 вот эти две строки обязательны
-  const root = modal.root;
-  const doClose = modal.doClose;
+root.querySelector('#confirm-delete').addEventListener('click', async () => {
+  const reason = root.querySelector('#delete-reason').value.trim();
+  if (!reason) return toast.error('Podaj powód!');
+  try {
+    await api('/api/control/delete', {
+      method: 'POST',
+      body: JSON.stringify({ id: eventId, reason })
+    });
+    toast.success('Zdarzenie usunięte');
 
-  root.querySelector('#confirm-delete').addEventListener('click', async () => {
-    const reason = root.querySelector('#delete-reason').value.trim();
-    if (!reason) return toast.error('Podaj powód!');
-    try {
-      await api('/api/control/delete', {
-        method: 'POST',
-        body: JSON.stringify({ id: eventId, reason })
-      });
-      toast.success('Zdarzenie usunięte');
-      doClose();
-      await renderSummary();
-    } 
-    catch (e) {
-      toast.error(e.message || 'Błąd przy usuwaniu');
-    }
-  });
-}
+    // ✅ ключевой момент — вызываем метод с правильным контекстом
+    if (typeof doClose === 'function') doClose.call(modal);
+
+    // небольшой таймаут, чтобы DOM обновился плавно
+    setTimeout(() => renderSummary(), 200);
+  } 
+  catch (e) {
+    toast.error(e.message || 'Błąd przy usuwaniu');
+  }
+});
 
 
   // ======= Summary =======
