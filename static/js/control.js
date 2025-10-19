@@ -1,38 +1,23 @@
 (function initControl() {
   'use strict';
-
-  // Проверка страницы
   if (!document.body.classList.contains('page-control')) return;
-
-  // Инициализация меню, если есть
   if (typeof window.initMenu === 'function') window.initMenu();
 
-  // Основные элементы
   const content = document.getElementById('control-content');
   if (!content) return;
 
   const $ = s => document.querySelector(s);
-  const el = (t, c) => {
-    const e = document.createElement(t);
-    if (c) e.className = c;
-    return e;
-  };
+  const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
   const toast = window.toast || { success: alert, error: alert, info: alert };
 
   let USERS = [];
   let STATE = { ym: new Date() };
 
   const ymStr = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  async function api(path, opts) {
-    return await window.api(path, opts || {});
-  }
+  async function api(path, opts) { return await window.api(path, opts || {}); }
 
   async function loadUsers() {
-    try {
-      USERS = await api('/api/users');
-    } catch {
-      USERS = [];
-    }
+    try { USERS = await api('/api/users'); } catch { USERS = []; }
   }
 
   function fillUsers(select) {
@@ -40,62 +25,38 @@
   }
 
   function buildDaysSelect(select) {
-    const y = STATE.ym.getFullYear();
-    const m = STATE.ym.getMonth();
+    const y = STATE.ym.getFullYear(), m = STATE.ym.getMonth();
     const last = new Date(y, m + 1, 0).getDate();
     select.innerHTML = '';
     for (let d = 1; d <= last; d++) {
       const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const opt = document.createElement('option');
-      opt.value = iso;
-      opt.textContent = iso;
+      opt.value = iso; opt.textContent = iso;
       select.appendChild(opt);
     }
   }
 
-  function openModal(html) {
+  function openModalFromTemplate(tplId) {
+    const tpl = document.getElementById(tplId);
+    if (!tpl) throw new Error('Nie znaleziono template: ' + tplId);
     const m = el('div', 'modal-backdrop');
-    m.innerHTML = `<div class="modal">${html}</div>`;
+    const modal = el('div', 'modal');
+    modal.appendChild(tpl.content.cloneNode(true));
+    m.appendChild(modal);
     document.body.appendChild(m);
-
     const doClose = () => m.remove();
     m.addEventListener('click', e => {
       if (e.target === m || e.target.classList.contains('modal-close')) doClose();
     });
-
-    return { root: m, doClose };
+    return { root: modal, doClose };
   }
 
   // ======= MODALS =======
 
   async function onLate() {
-    const modal = openModal(`
-      <div class="modal-head">
-        <div class="modal-title">Dodaj spóźnienie</div>
-        <button class="modal-close">×</button>
-      </div>
-      <div class="modal-body">
-        <label>Pracownik</label><select id="late-user"></select>
-        <label>Dzień</label><select id="late-date"></select>
-        <label>Na ile minut spóźnienia</label><input id="late-minutes" type="number" min="1">
-        <label>Faktyczne godziny pracy</label>
-        <div style="display:flex; gap:6px;">
-          <input id="late-from" type="time"> do <input id="late-to" type="time">
-        </div>
-        <label>Powód (opcjonalnie)</label><input id="late-reason" type="text">
-        <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
-          <button class="btn-secondary modal-close">Anuluj</button>
-          <button class="btn-primary" id="late-save">Zapisz</button>
-        </div>
-      </div>
-    `);
-
-    const { root, doClose } = modal;
-    const u = root.querySelector('#late-user');
-    const d = root.querySelector('#late-date');
-    fillUsers(u);
-    buildDaysSelect(d);
-
+    const { root, doClose } = openModalFromTemplate('tpl-late');
+    const u = root.querySelector('#late-user'), d = root.querySelector('#late-date');
+    fillUsers(u); buildDaysSelect(d);
     root.querySelector('#late-save').addEventListener('click', async () => {
       try {
         await api('/api/control/late', {
@@ -109,35 +70,15 @@
             time_to: root.querySelector('#late-to').value
           })
         });
-        toast.success('Zapisano spóźnienie');
-        doClose();
-        await renderSummary();
-      } catch (e) {
-        toast.error(e.message || 'Błąd');
-      }
+        toast.success('Zapisano spóźnienie'); doClose(); await renderSummary();
+      } catch (e) { toast.error(e.message || 'Błąd'); }
     });
   }
 
   async function onExtra() {
-    const { root, doClose } = openModal(`
-      <div class="modal-head"><div class="modal-title">Dodaj dodatkowe godziny</div><button class="modal-close">×</button></div>
-      <div class="modal-body">
-        <label>Pracownik</label><select id="extra-user"></select>
-        <label>Dzień</label><select id="extra-date"></select>
-        <label>Powód</label><input id="extra-reason" type="text">
-        <label>Ilość godzin</label><input id="extra-hours" type="number" min="0.5" step="0.5">
-        <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
-          <button class="btn-secondary modal-close">Anuluj</button>
-          <button class="btn-primary" id="extra-save">Zapisz</button>
-        </div>
-      </div>
-    `);
-
-    const u = root.querySelector('#extra-user');
-    const d = root.querySelector('#extra-date');
-    fillUsers(u);
-    buildDaysSelect(d);
-
+    const { root, doClose } = openModalFromTemplate('tpl-extra');
+    const u = root.querySelector('#extra-user'), d = root.querySelector('#extra-date');
+    fillUsers(u); buildDaysSelect(d);
     root.querySelector('#extra-save').addEventListener('click', async () => {
       const hours = parseFloat(root.querySelector('#extra-hours').value || '0');
       if (!(hours > 0)) return toast.error('Podaj ilość godzin');
@@ -145,82 +86,37 @@
         await api('/api/control/extra', {
           method: 'POST',
           body: JSON.stringify({
-            user_id: Number(u.value),
-            date: d.value,
-            reason: root.querySelector('#extra-reason').value || '',
-            hours
+            user_id: Number(u.value), date: d.value,
+            reason: root.querySelector('#extra-reason').value || '', hours
           })
         });
-        toast.success('Zapisano dodatkowe godziny');
-        doClose();
-        await renderSummary();
-      } catch (e) {
-        toast.error(e.message || 'Błąd');
-      }
+        toast.success('Zapisano dodatkowe godziny'); doClose(); await renderSummary();
+      } catch (e) { toast.error(e.message || 'Błąd'); }
     });
   }
 
   async function onAbsence() {
-    const { root, doClose } = openModal(`
-      <div class="modal-head"><div class="modal-title">Zgłoś nieobecność</div><button class="modal-close">×</button></div>
-      <div class="modal-body">
-        <label>Pracownik</label><select id="abs-user"></select>
-        <label>Dzień</label><select id="abs-date"></select>
-        <label>Powód</label><input id="abs-reason" type="text">
-        <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
-          <button class="btn-secondary modal-close">Anuluj</button>
-          <button class="btn-primary" id="abs-save">Zapisz</button>
-        </div>
-      </div>
-    `);
-
-    const u = root.querySelector('#abs-user');
-    const d = root.querySelector('#abs-date');
-    fillUsers(u);
-    buildDaysSelect(d);
-
+    const { root, doClose } = openModalFromTemplate('tpl-absence');
+    const u = root.querySelector('#abs-user'), d = root.querySelector('#abs-date');
+    fillUsers(u); buildDaysSelect(d);
     root.querySelector('#abs-save').addEventListener('click', async () => {
       try {
         await api('/api/control/absence', {
           method: 'POST',
           body: JSON.stringify({
-            user_id: Number(u.value),
-            date: d.value,
+            user_id: Number(u.value), date: d.value,
             reason: root.querySelector('#abs-reason').value || ''
           })
         });
-        toast.success('Zapisano nieobecność');
-        doClose();
-        await renderSummary();
-      } catch (e) {
-        toast.error(e.message || 'Błąd');
-      }
+        toast.success('Zapisano nieobecność'); doClose(); await renderSummary();
+      } catch (e) { toast.error(e.message || 'Błąd'); }
     });
   }
 
   async function onShift() {
-    const { root, doClose } = openModal(`
-      <div class="modal-head"><div class="modal-title">Dodaj zmianę</div><button class="modal-close">×</button></div>
-      <div class="modal-body">
-        <label>Pracownik</label><select id="sh-user"></select>
-        <label>Dzień</label><select id="sh-date"></select>
-        <label>Powód</label><input id="sh-reason" type="text">
-        <label>Godziny</label>
-        <div style="display:flex; gap:6px;">
-          <input id="sh-from" type="time"> do <input id="sh-to" type="time">
-        </div>
-        <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
-          <button class="btn-secondary modal-close">Anuluj</button>
-          <button class="btn-primary" id="sh-save">Zapisz</button>
-        </div>
-      </div>
-    `);
-
-    const u = root.querySelector('#sh-user');
-    const d = root.querySelector('#sh-date');
-    fillUsers(u);
-    buildDaysSelect(d);
-
+    const { root, doClose } = openModalFromTemplate('tpl-shift');
+    const u = root.querySelector('#sh-user'), d = root.querySelector('#sh-date');
+    fillUsers(u); buildDaysSelect(d);
     root.querySelector('#sh-save').addEventListener('click', async () => {
       const from = root.querySelector('#sh-from').value;
       const to = root.querySelector('#sh-to').value;
@@ -229,55 +125,26 @@
         await api('/api/control/add-shift', {
           method: 'POST',
           body: JSON.stringify({
-            user_id: Number(u.value),
-            date: d.value,
-            reason: root.querySelector('#sh-reason').value || '',
-            from,
-            to
+            user_id: Number(u.value), date: d.value,
+            reason: root.querySelector('#sh-reason').value || '', from, to
           })
         });
-        toast.success('Dodano zmianę');
-        doClose();
-        await renderSummary();
-      } catch (e) {
-        toast.error(e.message || 'Błąd');
-      }
+        toast.success('Dodano zmianę'); doClose(); await renderSummary();
+      } catch (e) { toast.error(e.message || 'Błąd'); }
     });
   }
 
-  // --- Удаление событий ---
   function onDeleteEvent(eventId) {
-    const modal = openModal(`
-      <div class="modal-head">
-        <div class="modal-title">Usuń zdarzenie</div>
-        <button class="modal-close">×</button>
-      </div>
-      <div class="modal-body">
-        <p>Podaj powód usunięcia:</p>
-        <textarea id="delete-reason" rows="3" style="width:100%"></textarea>
-        <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
-          <button class="btn-secondary modal-close">Anuluj</button>
-          <button class="btn-danger" id="confirm-delete">Usuń</button>
-        </div>
-      </div>
-    `);
-
-    const { root, doClose } = modal;
-
+    const { root, doClose } = openModalFromTemplate('tpl-delete');
     root.querySelector('#confirm-delete').addEventListener('click', async () => {
       const reason = root.querySelector('#delete-reason').value.trim();
       if (!reason) return toast.error('Podaj powód!');
       try {
         await api('/api/control/delete', {
-          method: 'POST',
-          body: JSON.stringify({ id: eventId, reason })
+          method: 'POST', body: JSON.stringify({ id: eventId, reason })
         });
-        toast.success('Zdarzenie usunięte');
-        doClose();
-        setTimeout(() => renderSummary(), 200);
-      } catch (e) {
-        toast.error(e.message || 'Błąd przy usuwaniu');
-      }
+        toast.success('Zdarzenie usunięte'); doClose(); await renderSummary();
+      } catch (e) { toast.error(e.message || 'Błąd przy usuwaniu'); }
     });
   }
 
@@ -399,15 +266,11 @@
     }
   }
 
-  // === Инициализация кнопок ===
   document.getElementById('btn-late')?.addEventListener('click', onLate);
   document.getElementById('btn-extra')?.addEventListener('click', onExtra);
   document.getElementById('btn-absence')?.addEventListener('click', onAbsence);
   document.getElementById('btn-shift')?.addEventListener('click', onShift);
 
-  (async () => {
-    await loadUsers();
-    await renderSummary();
-  })();
+  (async () => { await loadUsers(); await renderSummary(); })();
 
 })();
