@@ -811,6 +811,21 @@ def control_add_late():
     return jsonify({'ok': True, 'event': ev.to_dict()})
     
 
+
+@app.route('/api/control/deleted')
+@jwt_required()
+def control_deleted_list():
+    res = db.session.execute("""
+        SELECT c.id AS event_id, u.full_name AS user_name, c.reason, c.deleted_at
+        FROM control_deleted c
+        JOIN users u ON c.deleted_by = u.id
+        ORDER BY c.deleted_at DESC
+    """).mappings().all()
+    return jsonify([dict(r) for r in res])
+
+
+
+
 @app.post('/api/control/extra')
 @jwt_required()
 def control_add_extra():
@@ -2957,6 +2972,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
