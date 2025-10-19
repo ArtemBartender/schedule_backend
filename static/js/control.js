@@ -136,17 +136,29 @@
 
   function onDeleteEvent(eventId) {
     const { root, doClose } = openModalFromTemplate('tpl-delete');
-    root.querySelector('#confirm-delete').addEventListener('click', async () => {
+  
+    const closeSafely = () => {
+      try { doClose.call(null); } catch (_) { try { root.closest('.modal-backdrop')?.remove(); } catch {} }
+    };
+  
+    root.querySelector('#confirm-delete').addEventListener('click', async (ev) => {
+      ev.preventDefault();
       const reason = root.querySelector('#delete-reason').value.trim();
       if (!reason) return toast.error('Podaj powód!');
       try {
         await api('/api/control/delete', {
-          method: 'POST', body: JSON.stringify({ id: eventId, reason })
+          method: 'POST',
+          body: JSON.stringify({ id: eventId, reason })
         });
-        toast.success('Zdarzenie usunięte'); doClose(); await renderSummary();
-      } catch (e) { toast.error(e.message || 'Błąd przy usuwaniu'); }
+        toast.success('Zdarzenie usunięte');
+        closeSafely();
+        setTimeout(() => renderSummary(), 200);
+      } catch (e) {
+        toast.error(e.message || 'Błąd przy usuwaniu');
+      }
     });
   }
+
 
   // ======= Summary =======
   async function renderSummary() {
