@@ -52,7 +52,10 @@
   // ======= MODALS =======
 
   async function onLate(){
-    const {root, doClose} = openModal(`
+    const modal = openModal(`
+    const root = modal.root;
+    const doClose = modal.doClose;
+
       <div class="modal-head">
         <div class="modal-title">Dodaj spóźnienie</div>
         <button class="modal-close">×</button>
