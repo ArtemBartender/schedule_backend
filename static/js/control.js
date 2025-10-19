@@ -228,7 +228,8 @@
       toast.success('Zdarzenie usunięte');
       doClose();
       await renderSummary();
-    } catch (e) {
+    } 
+    catch (e) {
       toast.error(e.message || 'Błąd przy usuwaniu');
     }
   });
