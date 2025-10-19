@@ -51,7 +51,7 @@
 
   // ======= MODALS =======
 
-  async function onLate(){
+  async function onLate() {
   const modal = openModal(`
       <div class="modal-head">
         <div class="modal-title">Dodaj spóźnienie</div>
@@ -101,7 +101,8 @@
       toast.error(e.message || 'Błąd');
     }
   });
-}
+} // ← вот эта скобка правильная, только одна!
+
 
 
   async function onExtra(){
