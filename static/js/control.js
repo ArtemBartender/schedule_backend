@@ -44,10 +44,7 @@
     modal.appendChild(tpl.content.cloneNode(true));
     m.appendChild(modal);
     document.body.appendChild(m);
-    const doClose = function() { 
-      if (m && m.parentNode) m.parentNode.removeChild(m);
-    };
-
+    const doClose = m.remove.bind(m);
     m.addEventListener('click', e => {
       if (e.target === m || e.target.classList.contains('modal-close')) doClose();
     });
