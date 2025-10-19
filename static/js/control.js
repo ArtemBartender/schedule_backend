@@ -240,13 +240,25 @@
       const list = el('div','col');
       data.events.forEach(e=>{
         const row = el('div','row between');
-        row.style.padding = '6px 0'; row.style.borderBottom = '1px solid var(--border)';
+        row.style.padding = '6px 0';
+        row.style.borderBottom = '1px solid var(--border)';
         row.innerHTML = `
-          <div><span class="tag tag-small">${mapName[e.kind]||e.kind}</span> <b>${e.user||''}</b> — ${e.date}${e.hours?` · ${e.hours}h`:''}${e.time_from?` · ${e.time_from}-${e.time_to}`:''}</div>
-          <div class="muted small">${e.reason?e.reason:''}</div>
+          <div>
+            <span class="tag tag-small">${mapName[e.kind]||e.kind}</span>
+            <b>${e.user||''}</b> — ${e.date}
+            ${e.hours?` · ${e.hours}h`:''}
+            ${e.time_from?` · ${e.time_from}-${e.time_to}`:''}
+            ${e.delay_minutes?` · spóźnienie ${e.delay_minutes} min`:''}
+          </div>
+          <div class="row center" style="gap:6px;">
+            <div class="muted small">${e.reason?e.reason:''}</div>
+            <button class="icon-btn" title="Usuń" data-id="${e.id}">🗑️</button>
+          </div>
         `;
+        row.querySelector('button.icon-btn').addEventListener('click', ()=>onDeleteEvent(e.id));
         list.appendChild(row);
       });
+
       evWrap.appendChild(list);
     }
     // --- Удаление событий ---
