@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 from collections import Counter
 from flask import Flask, request, jsonify, render_template, send_from_directory, redirect
 from flask_sqlalchemy import SQLAlchemy
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt, get_jwt_identity
 from sqlalchemy import and_, text as sqltext
 from sqlalchemy import text
 from sqlalchemy.sql import func
@@ -2973,6 +2973,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
