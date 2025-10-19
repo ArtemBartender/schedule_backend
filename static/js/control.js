@@ -249,6 +249,39 @@
       });
       evWrap.appendChild(list);
     }
+    // --- Удаление событий ---
+    function onDeleteEvent(eventId) {
+      const {root, doClose} = openModal(`
+        <div class="modal-head">
+          <div class="modal-title">Usuń zdarzenie</div>
+          <button class="modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p>Podaj powód usunięcia:</p>
+          <textarea id="delete-reason" rows="3" style="width:100%"></textarea>
+          <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn-secondary modal-close">Anuluj</button>
+            <button class="btn-danger" id="confirm-delete">Usuń</button>
+          </div>
+        </div>
+      `);
+    
+      root.querySelector('#confirm-delete').addEventListener('click', async ()=>{
+        const reason = root.querySelector('#delete-reason').value.trim();
+        if (!reason) return toast.error('Podaj powód!');
+        try {
+          await api('/api/control/delete', {
+            method: 'POST',
+            body: JSON.stringify({ id: eventId, reason })
+          });
+          toast.success('Zdarzenie usunięte');
+          doClose();
+          await renderSummary();
+        } catch(e){
+          toast.error(e.message || 'Błąd przy usuwaniu');
+        }
+      });
+    }
 
     // staffing
     const st = $('#staffing-table');
