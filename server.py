@@ -2912,7 +2912,6 @@ def control_deleted_list():
         ORDER BY c.deleted_at DESC
     """).mappings().all()
     return jsonify([dict(r) for r in res])
-``
 
 
 
@@ -2974,6 +2973,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
