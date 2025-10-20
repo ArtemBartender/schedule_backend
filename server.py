@@ -2785,8 +2785,6 @@ def upload_text():
 
 
 
-# ========================= CONTROL API =========================
-
 @app.route('/api/control/delete', methods=['POST'])
 @jwt_required()
 def control_delete():
@@ -2803,15 +2801,21 @@ def control_delete():
     if not event_id or not reason:
         return jsonify({'error': 'Missing id or reason'}), 400
 
-    db.execute(text("""
-        INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
-        VALUES (:eid, :uid, :reason, CURRENT_TIMESTAMP)
-    """), {'eid': event_id, 'uid': user_id, 'reason': reason})
+    try:
+        # ✅ SQLite-friendly timestamp
+        db.execute(text("""
+            INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
+            VALUES (:eid, :uid, :reason, datetime('now'))
+        """), {'eid': event_id, 'uid': user_id, 'reason': reason})
 
-    db.execute(text("DELETE FROM control_events WHERE id = :eid"), {'eid': event_id})
-    db.commit()
+        db.execute(text("DELETE FROM control_events WHERE id = :eid"), {'eid': event_id})
+        db.commit()
 
-    return jsonify({'status': 'ok'})
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        db.rollback()
+        print("❌ control_delete error:", e)
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/control/deleted')
@@ -2832,8 +2836,6 @@ def control_deleted_list():
     except Exception as e:
         print("❌ /api/control/deleted error:", e)
         return jsonify({'error': str(e)}), 500
-
-
 
 
 
@@ -3008,6 +3010,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
