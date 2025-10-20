@@ -14,7 +14,25 @@
     info:    (msg) => (window.toast?.info    ? window.toast.info(String(msg))    : alert(msg))
   };
 
+  // Заменяем стандартный alert на всплывающие уведомления
+  function showToast(message, type = 'info') {
+    const el = document.createElement('div');
+    el.className = `toast-message ${type}`;
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(() => el.classList.add('visible'), 10);
+    setTimeout(() => {
+      el.classList.remove('visible');
+      setTimeout(() => el.remove(), 300);
+    }, 3000);
+  }
+  
+  // используем его везде вместо toast.success(...)
+  toast.success = (msg) => showToast(msg, 'success');
+  toast.error = (msg) => showToast(msg, 'error');
+  toast.info = (msg) => showToast(msg, 'info');
 
+  
   let USERS = [];
   let STATE = { ym: new Date() };
 
