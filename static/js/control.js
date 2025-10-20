@@ -244,6 +244,7 @@
       </div>
     `;
   
+    // === Заголовок месяца ===
     const title = new Intl.DateTimeFormat('pl-PL', { month: 'long', year: 'numeric' }).format(STATE.ym);
     $('#month-title').textContent = title.charAt(0).toUpperCase() + title.slice(1);
   
@@ -256,6 +257,7 @@
       renderSummary();
     });
   
+    // === Загрузка данных ===
     let data;
     try {
       data = await api('/api/control/summary?month=' + encodeURIComponent(ymStr(STATE.ym)));
@@ -294,7 +296,10 @@
             <button class="icon-btn" title="Usuń" data-id="${e.id}">🗑️</button>
           </div>
         `;
-        row.querySelector('button.icon-btn').addEventListener('click', () => onDeleteEvent(e.id));
+        row.querySelector('button.icon-btn').addEventListener('click', async () => {
+          await onDeleteEvent(e.id);
+          await renderDeletedLog(); // автообновление после удаления
+        });
         list.appendChild(row);
       });
       evWrap.appendChild(list);
