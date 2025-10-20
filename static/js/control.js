@@ -344,7 +344,8 @@
         log.forEach(l => {
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td>${new Date(l.deleted_at).toLocaleString('pl-PL')}</td>
+            <td>${new Date(l.deleted_date).toLocaleDateString('pl-PL')}</td>
+
             <td>${l.user_name || '-'}</td>
             <td>${l.reason || '-'}</td>
             <td>#${l.event_id}</td>
