@@ -138,7 +138,7 @@
     const { root, doClose } = openModalFromTemplate('tpl-delete');
   
     const closeSafely = () => {
-      try { doClose.call(null); } catch (_) { try { root.closest('.modal-backdrop')?.remove(); } catch {} }
+      try { doClose(); } catch (_) { try { root.closest('.modal-backdrop')?.remove(); } catch {} }
     };
   
     root.querySelector('#confirm-delete').addEventListener('click', async (ev) => {
