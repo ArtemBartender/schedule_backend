@@ -8,7 +8,12 @@
 
   const $ = s => document.querySelector(s);
   const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
-  const toast = window.toast || { success: alert, error: alert, info: alert };
+  const toast = {
+    success: (msg) => (window.toast?.success ? window.toast.success(String(msg)) : alert(msg)),
+    error:   (msg) => (window.toast?.error   ? window.toast.error(String(msg))   : alert(msg)),
+    info:    (msg) => (window.toast?.info    ? window.toast.info(String(msg))    : alert(msg))
+  };
+
 
   let USERS = [];
   let STATE = { ym: new Date() };
