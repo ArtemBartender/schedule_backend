@@ -2887,6 +2887,7 @@ def control_delete():
     event_id = data.get('id')
     reason = (data.get('reason') or '').strip()
     identity = get_jwt_identity()
+    print("🔍 JWT identity:", identity, type(identity))
 
     if not event_id or not reason:
         return jsonify({'error': 'Missing id or reason'}), 400
@@ -2989,6 +2990,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
