@@ -30,7 +30,7 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.exc import OperationalError, DisconnectionError
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.orm import sessionmaker
-
+from flask import current_app
 
 
 # ---------------------------------
@@ -2783,7 +2783,11 @@ def upload_text():
 
 
 
-Session = sessionmaker(bind=db.engine)
+
+
+
+
+
 
 
 
@@ -2791,63 +2795,74 @@ Session = sessionmaker(bind=db.engine)
 @app.route('/api/control/delete', methods=['POST'])
 @jwt_required()
 def control_delete():
-    session = Session()  # создаём новую сессию
+    # создаём сессию безопасно внутри контекста
+    with current_app.app_context():
+        session = db.session
 
-    data = request.get_json()
-    event_id = data.get('id')
-    reason = (data.get('reason') or '').strip()
-    identity = get_jwt_identity()
+        data = request.get_json()
+        event_id = data.get('id')
+        reason = (data.get('reason') or '').strip()
+        identity = get_jwt_identity()
 
-    try:
-        user_id = int(identity)
-    except (ValueError, TypeError):
-        return jsonify({'error': 'Invalid user identity'}), 400
+        try:
+            user_id = int(identity)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid user identity'}), 400
 
-    if not event_id or not reason:
-        return jsonify({'error': 'Missing id or reason'}), 400
+        if not event_id or not reason:
+            return jsonify({'error': 'Missing id or reason'}), 400
 
-    try:
-        session.execute(text("""
-            INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
-            VALUES (:eid, :uid, :reason, datetime('now'))
-        """), {'eid': event_id, 'uid': user_id, 'reason': reason})
+        try:
+            session.execute(text("""
+                INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
+                VALUES (:eid, :uid, :reason, datetime('now'))
+            """), {'eid': event_id, 'uid': user_id, 'reason': reason})
 
-        session.execute(text("DELETE FROM control_events WHERE id = :eid"), {'eid': event_id})
-        session.commit()
+            session.execute(text("DELETE FROM control_events WHERE id = :eid"), {'eid': event_id})
+            session.commit()
 
-        return jsonify({'status': 'ok'})
-    except Exception as e:
-        import traceback
-        session.rollback()
-        print("❌ control_delete error:", e)
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-    finally:
-        session.close()
+            return jsonify({'status': 'ok'})
+        except Exception as e:
+            import traceback
+            session.rollback()
+            print("❌ control_delete error:", e)
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+
+
+
 
 @app.route('/api/control/deleted')
 @jwt_required()
 def control_deleted_list():
-    session = Session()
-    try:
-        rows = session.execute(text("""
-            SELECT 
-                c.event_id,
-                COALESCE(u.full_name, 'ID ' || c.deleted_by) AS user_name,
-                c.reason,
-                c.deleted_at
-            FROM control_deleted c
-            LEFT JOIN users u ON CAST(c.deleted_by AS INTEGER) = u.id
-            ORDER BY c.deleted_at DESC
-        """)).mappings().all()
-        return jsonify([dict(r) for r in rows])
-    except Exception as e:
-        import traceback
-        print("❌ /api/control/deleted error:", e)
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-    finally:
-        session.close()
+    with current_app.app_context():
+        session = db.session
+        try:
+            rows = session.execute(text("""
+                SELECT 
+                    c.event_id,
+                    COALESCE(u.full_name, 'ID ' || c.deleted_by) AS user_name,
+                    c.reason,
+                    c.deleted_at
+                FROM control_deleted c
+                LEFT JOIN users u ON CAST(c.deleted_by AS INTEGER) = u.id
+                ORDER BY c.deleted_at DESC
+            """)).mappings().all()
+            return jsonify([dict(r) for r in rows])
+        except Exception as e:
+            import traceback
+            print("❌ /api/control/deleted error:", e)
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+
+
+
+
+
+
+
 
 
 
@@ -3022,6 +3037,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
