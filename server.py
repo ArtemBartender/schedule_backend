@@ -2892,7 +2892,8 @@ def control_deleted_list():
     for r in rows:
         result.append({
             'event_id': r['event_id'],
-            'deleted_date': r['deleted_date'],
+            'deleted_date': f"{r['deleted_date']}T00:00:00" if r['deleted_date'] else None,
+
             'user_name': r['user_name'],
             'reason': r['reason']
         })
@@ -3113,6 +3114,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
