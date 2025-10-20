@@ -193,8 +193,9 @@
         close();
         await renderSummary();
       } catch (e) {
-        toast.error(e.message || 'Błąd przy usuwaniu');
-      }
+          console.warn('delete failed', e);
+        }
+
     });
   }
 
