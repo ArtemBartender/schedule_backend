@@ -215,19 +215,38 @@
           <button class="btn-secondary" id="ctl-next">▶</button>
         </div>
       </div>
+  
       <div class="card" style="padding:12px">
         <h3 style="margin:0 0 8px">Skrót zdarzeń</h3>
         <div id="events-list"></div>
       </div>
+  
       <div class="card" style="padding:12px; margin-top:12px">
         <h3 style="margin:0 0 8px">Obsada (norma 12)</h3>
         <div id="staffing-table"></div>
       </div>
+  
+      <div class="card deleted-log" style="margin-top:12px;">
+        <h3 style="margin-bottom:8px;">🗑️ Usunięte zdarzenia</h3>
+        <table class="table deleted-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Kto usunął</th>
+              <th>Powód</th>
+              <th>ID zdarzenia</th>
+            </tr>
+          </thead>
+          <tbody id="deleted-log">
+            <tr><td colspan="4" class="muted">Wczytywanie...</td></tr>
+          </tbody>
+        </table>
+      </div>
     `;
-
+  
     const title = new Intl.DateTimeFormat('pl-PL', { month: 'long', year: 'numeric' }).format(STATE.ym);
     $('#month-title').textContent = title.charAt(0).toUpperCase() + title.slice(1);
-
+  
     $('#ctl-prev').addEventListener('click', () => {
       STATE.ym = new Date(STATE.ym.getFullYear(), STATE.ym.getMonth() - 1, 1);
       renderSummary();
@@ -236,7 +255,7 @@
       STATE.ym = new Date(STATE.ym.getFullYear(), STATE.ym.getMonth() + 1, 1);
       renderSummary();
     });
-
+  
     let data;
     try {
       data = await api('/api/control/summary?month=' + encodeURIComponent(ymStr(STATE.ym)));
@@ -244,7 +263,8 @@
       $('#events-list').innerHTML = `<div class="muted">${e.message || 'Błąd'}</div>`;
       return;
     }
-
+  
+    // === Список событий ===
     const evWrap = $('#events-list');
     const mapName = {
       late: 'Spóźnienie',
@@ -252,7 +272,7 @@
       absence: 'Nieobecność',
       manual_shift: 'Dodana zmiana'
     };
-
+  
     if (!data.events?.length) {
       evWrap.innerHTML = '<div class="muted">Brak zdarzeń.</div>';
     } else {
@@ -279,48 +299,59 @@
       });
       evWrap.appendChild(list);
     }
-
-    // staffing
+  
+    // === Таблица Obsada ===
     const st = $('#staffing-table');
-    const tbl = el('table', 'table');
-    tbl.innerHTML = `<thead><tr><th>Data</th><th>Rano</th><th>Δ</th><th>Popo</th><th>Δ</th></tr></thead><tbody></tbody>`;
+    const tbl = el('table', 'table staffing');
+    tbl.innerHTML = `
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Rano</th><th>Δ</th>
+          <th>Popołudnie</th><th>Δ</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
     const tb = tbl.querySelector('tbody');
+  
     (data.staffing || []).forEach(r => {
       const tr = document.createElement('tr');
       const cls1 = r.morning_delta < 0 ? 'neg' : r.morning_delta > 0 ? 'pos' : '';
       const cls2 = r.evening_delta < 0 ? 'neg' : r.evening_delta > 0 ? 'pos' : '';
       tr.innerHTML = `
-        <td>${r.date}</td>
+        <td><b>${r.date}</b></td>
         <td>${r.morning}</td><td class="${cls1}">${r.morning_delta}</td>
         <td>${r.evening}</td><td class="${cls2}">${r.evening_delta}</td>
       `;
       tb.appendChild(tr);
     });
     st.appendChild(tbl);
-
-    // Deleted log
-    const logBox = el('div', 'card');
-    logBox.style.marginTop = '12px';
-    logBox.innerHTML = `<h3>Usunięte zdarzenia</h3><div id="deleted-log"></div>`;
-    box.appendChild(logBox);
-
+  
+    // === История удалений ===
     try {
+      const tbody = document.querySelector('#deleted-log');
       const log = await api('/api/control/deleted');
-      const wrap = logBox.querySelector('#deleted-log');
-      if (!log.length) wrap.innerHTML = '<div class="muted">Brak usunięć</div>';
-      else {
-        const list = el('div', 'col');
+      if (!log.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="muted">Brak usunięć</td></tr>`;
+      } else {
+        tbody.innerHTML = '';
         log.forEach(l => {
-          const div = el('div', 'small muted');
-          div.textContent = `${l.deleted_at} — ${l.user_name} usunął zdarzenie #${l.event_id}: ${l.reason}`;
-          list.appendChild(div);
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${new Date(l.deleted_at).toLocaleString('pl-PL')}</td>
+            <td>${l.user_name || '-'}</td>
+            <td>${l.reason || '-'}</td>
+            <td>#${l.event_id}</td>
+          `;
+          tbody.appendChild(tr);
         });
-        wrap.appendChild(list);
       }
     } catch (e) {
       console.warn('no log', e);
     }
   }
+
 
   document.getElementById('btn-late')?.addEventListener('click', onLate);
   document.getElementById('btn-extra')?.addEventListener('click', onExtra);
