@@ -345,7 +345,6 @@
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td>${new Date(l.deleted_date).toLocaleDateString('pl-PL')}</td>
-
             <td>${l.user_name || '-'}</td>
             <td>${l.reason || '-'}</td>
             <td>#${l.event_id}</td>
@@ -356,7 +355,9 @@
     } catch (e) {
       console.warn('no log', e);
     }
-  }
+    
+    // 👇 Добавь это сюда, после блока try/catch:
+    await renderDeletedLog();
 
 
   document.getElementById('btn-late')?.addEventListener('click', onLate);
