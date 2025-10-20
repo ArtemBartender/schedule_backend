@@ -377,40 +377,31 @@
           <div class="modal-content">
             <p><b>ID zdarzenia:</b> #${data.event_id}</p>
             <p><b>Rodzaj:</b> ${data.kind || '—'}</p>
-            <p><b>Data zdarzenia:</b> ${data.date || '—'}</p>
+            <p><b>Data zdarzenia:</b> ${
+              data.event_date ? new Date(data.event_date).toLocaleDateString('pl-PL') : '—'
+            }</p>
             <p><b>Godziny:</b> ${data.time_from || '?'} - ${data.time_to || '?'}</p>
             <p><b>Ilość godzin:</b> ${data.hours || '—'}</p>
             <p><b>Osoba:</b> ${data.user_name || '—'}</p>
             <hr>
-            <p><b>Usunięto przez:</b> ${data.deleted_by}</p>
-            <p><b>Data usunięcia:</b> ${data.deleted_date}</p>
-            <p><b>Powód:</b> ${data.event_reason || data.reason || '—'}</p>
+            <p><b>Usunięto przez:</b> ${data.deleted_by_name || '—'}</p>
+            <p><b>Data usunięcia:</b> ${
+              data.deleted_date
+                ? new Date(data.deleted_date).toLocaleDateString('pl-PL')
+                : '—'
+            }</p>
+            <p><b>Powód:</b> ${data.reason || '—'}</p>
           </div>
           <div class="modal-actions">
             <button class="btn-secondary" id="close-modal">Zamknij</button>
-            <button class="btn-primary" id="restore-event">Przywróć</button>
           </div>
         </div>
       `;
       document.body.appendChild(modal);
   
-      // закрыть
       document.querySelector('#close-modal').addEventListener('click', () => modal.remove());
-  
-      // восстановить
-      document.querySelector('#restore-event').addEventListener('click', async () => {
-        if (!confirm('Czy na pewno chcesz przywrócić to zdarzenie?')) return;
-        try {
-          await api(`/api/control/restore/${eventId}`, { method: 'POST' });
-          toast.success('Zdarzenie zostało przywrócone!');
-          modal.remove();
-          renderSummary(); // обновим список
-        } catch (err) {
-          toast.error('Błąd przy przywracaniu: ' + err.message);
-        }
-      });
     } catch (err) {
-      alert('Błąd: ' + err.message);
+      toast.error('Błąd: ' + err.message);
     }
   }
 
@@ -430,9 +421,13 @@
       for (const l of log) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td>${l.deleted_date}</td>
-          <td>${l.user_name}</td>
-          <td>${l.reason}</td>
+          <td>${
+            l.deleted_date
+              ? new Date(l.deleted_date).toLocaleDateString('pl-PL')
+              : '—'
+          }</td>
+          <td>${l.user_name || '—'}</td>
+          <td>${l.reason || '—'}</td>
           <td><a href="#" class="link" data-id="${l.event_id}">#${l.event_id}</a></td>
         `;
         tr.querySelector('a').addEventListener('click', e => {
