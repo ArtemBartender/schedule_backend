@@ -2886,38 +2886,29 @@ def control_delete():
     data = request.get_json()
     event_id = data.get('id')
     reason = (data.get('reason') or '').strip()
-    identity = get_jwt_identity()
-    print("🔍 JWT identity:", identity, type(identity))
+    identity = get_jwt_identity()  # вернёт строку ID
+
+    # 🔧 Преобразуем в число
+    try:
+        user_id = int(identity)
+    except ValueError:
+        return jsonify({'error': 'Invalid user identity'}), 400
 
     if not event_id or not reason:
         return jsonify({'error': 'Missing id or reason'}), 400
 
-    # Определяем user_id по типу identity
-    user_id = None
-    if isinstance(identity, int):
-        user_id = identity
-    elif isinstance(identity, str):
-        user_id = db.session.execute(text("SELECT id FROM users WHERE email = :email"), {'email': identity}).scalar()
-    elif isinstance(identity, dict):
-        user_id = identity.get('id') or db.session.execute(
-            text("SELECT id FROM users WHERE email = :email"),
-            {'email': identity.get('email')}
-        ).scalar()
-
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 404
-
-    # Логируем удаление
+    # ✅ Логируем удаление
     db.session.execute(text("""
         INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
         VALUES (:eid, :uid, :reason, NOW())
     """), {'eid': event_id, 'uid': user_id, 'reason': reason})
 
-    # Удаляем оригинал
+    # ✅ Удаляем из основной таблицы
     db.session.execute(text("DELETE FROM control_events WHERE id = :eid"), {'eid': event_id})
     db.session.commit()
 
     return jsonify({'status': 'ok'})
+
 
 
 
@@ -2990,6 +2981,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
