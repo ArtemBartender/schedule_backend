@@ -948,5 +948,45 @@ main.container{
 .badge-zmiwak, .badge-zmywak { background: rgba(160,160,165,.18); border: 1px solid rgba(160,160,165,.55); }
 .badge-bar { background: rgba(255,214,74,.18); border: 1px solid rgba(255,214,74,.55); }
 
+.toast-message {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #222;
+  color: white;
+  padding: 10px 16px;
+  border-radius: 8px;
+  opacity: 0;
+  transition: all 0.3s ease;
+  z-index: 9999;
+}
+.toast-message.success { background: #27ae60; }
+.toast-message.error { background: #c0392b; }
+.toast-message.info { background: #2980b9; }
+.toast-message.visible { opacity: 1; transform: translateY(10px); }
+
+
+
+
+
+.table.staffing {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  text-align: center;
+}
+.table.staffing th {
+  background: #1e1e1e;
+  color: #ddd;
+  padding: 8px;
+  font-weight: 600;
+}
+.table.staffing td {
+  padding: 6px;
+  border-bottom: 1px solid #333;
+}
+.table.staffing .pos { color: #2ecc71; font-weight: bold; }
+.table.staffing .neg { color: #e74c3c; font-weight: bold; }
+
 
 
