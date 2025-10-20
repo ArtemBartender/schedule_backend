@@ -2791,7 +2791,6 @@ def upload_text():
 
 
 
-
 @app.route('/api/control/delete', methods=['POST'])
 @jwt_required()
 def control_delete():
@@ -2805,7 +2804,7 @@ def control_delete():
 
     # 1️⃣ — достаём данные события
     event_data = db.session.execute(text("""
-        SELECT user_id, kind, date, hours, time_from, time_to, delay_minutes, reason AS event_reason
+        SELECT user_id, kind, event_date AS date, hours, time_from, time_to, delay_minutes, reason AS event_reason
         FROM control_events
         WHERE id = :eid
     """), {'eid': event_id}).mappings().first()
@@ -2813,10 +2812,10 @@ def control_delete():
     if not event_data:
         return jsonify({'error': 'Event not found'}), 404
 
-    # 2️⃣ — копируем в backup
+    # 2️⃣ — копируем в backup (если таблица control_events_backup существует)
     db.session.execute(text("""
         INSERT INTO control_events_backup (
-            event_id, user_id, kind, date, hours, time_from, time_to, delay_minutes, reason, deleted_by, deleted_at
+            event_id, user_id, kind, event_date, hours, time_from, time_to, delay_minutes, reason, deleted_by, deleted_at
         ) VALUES (
             :eid, :uid, :kind, :date, :hours, :tf, :tt, :delay, :reason, :deleted_by, CURRENT_TIMESTAMP
         )
@@ -2825,15 +2824,15 @@ def control_delete():
         'uid': event_data['user_id'],
         'kind': event_data['kind'],
         'date': event_data['date'],
-        'hours': event_data['hours'],
+        'hours': event_data['hours'] or 0,
         'tf': event_data['time_from'],
         'tt': event_data['time_to'],
-        'delay': event_data['delay_minutes'],
-        'reason': event_data['event_reason'],
+        'delay': event_data.get('delay_minutes') or 0,
+        'reason': event_data.get('event_reason') or '',
         'deleted_by': user_id
     })
 
-    # 3️⃣ — логируем в таблицу control_deleted
+    # 3️⃣ — логируем удаление
     db.session.execute(text("""
         INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
         VALUES (:eid, :uid, :reason, CURRENT_DATE)
@@ -2844,9 +2843,6 @@ def control_delete():
     db.session.commit()
 
     return jsonify({'status': 'ok'})
-
-
-
 
 
 # ===== История удалений =====
@@ -3088,6 +3084,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
