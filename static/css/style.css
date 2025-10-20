@@ -968,7 +968,6 @@ main.container{
 
 
 
-
 .table.staffing {
   width: 100%;
   border-collapse: collapse;
@@ -987,6 +986,28 @@ main.container{
 }
 .table.staffing .pos { color: #2ecc71; font-weight: bold; }
 .table.staffing .neg { color: #e74c3c; font-weight: bold; }
+
+.deleted-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.deleted-table th {
+  background: #1e1e1e;
+  color: #ddd;
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 600;
+}
+.deleted-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #333;
+}
+.deleted-table tr:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+
 
 
 
