@@ -689,10 +689,6 @@ async function api(path, opts = {}) {
 
 })();
 
-@app.route('/favicon.ico')
-def favicon():
-    # Возвращаем 204 No Content, чтобы браузер отстал
-    return '', 204
 // фиксируем CSS-переменную под реальную высоту шапки
 (function setTopbarHeightVar(){
   const tb = document.querySelector('.topbar');
@@ -798,5 +794,6 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
     }
   });
 })();
+
 
 
