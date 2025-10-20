@@ -2880,34 +2880,27 @@ def api_coord_panel_save():
 
 
 
-@app.route('/api/control/delete', methods=['POST'])
+@app.route('/api/control/deleted')
 @jwt_required()
-def control_delete():
-    data = request.get_json()
-    event_id = data.get('id')
-    reason = (data.get('reason') or '').strip()
-    identity = get_jwt_identity()  # вернёт строку ID
-
-    # 🔧 Преобразуем в число
+def control_deleted_list():
     try:
-        user_id = int(identity)
-    except ValueError:
-        return jsonify({'error': 'Invalid user identity'}), 400
+        res = db.session.execute(text("""
+            SELECT 
+                c.event_id,
+                COALESCE(u.full_name, CONCAT('ID ', c.deleted_by)) AS user_name,
+                c.reason,
+                c.deleted_at
+            FROM control_deleted c
+            LEFT JOIN users u 
+                ON CAST(c.deleted_by AS INTEGER) = u.id
+            ORDER BY c.deleted_at DESC
+        """)).mappings().all()
 
-    if not event_id or not reason:
-        return jsonify({'error': 'Missing id or reason'}), 400
+        return jsonify([dict(r) for r in res])
+    except Exception as e:
+        print("❌ /api/control/deleted error:", e)
+        return jsonify({'error': str(e)}), 500
 
-    # ✅ Логируем удаление
-    db.session.execute(text("""
-        INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
-        VALUES (:eid, :uid, :reason, NOW())
-    """), {'eid': event_id, 'uid': user_id, 'reason': reason})
-
-    # ✅ Удаляем из основной таблицы
-    db.session.execute(text("DELETE FROM control_events WHERE id = :eid"), {'eid': event_id})
-    db.session.commit()
-
-    return jsonify({'status': 'ok'})
 
 
 
@@ -2981,6 +2974,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
