@@ -153,7 +153,8 @@
         toast.success('Zdarzenie usunięte');
         closeSafely();
         setTimeout(() => renderSummary(), 200);
-      } catch (e) {
+      } 
+      catch (e) {
         console.error('Delete error:', e);
         const msg = (e && e.message) ? e.message : 'Błąd przy usuwaniu';
         toast.error(String(msg));
