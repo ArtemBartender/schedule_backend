@@ -37,19 +37,35 @@
   }
 
   function openModalFromTemplate(tplId) {
-    const tpl = document.getElementById(tplId);
-    if (!tpl) throw new Error('Nie znaleziono template: ' + tplId);
-    const m = el('div', 'modal-backdrop');
-    const modal = el('div', 'modal');
-    modal.appendChild(tpl.content.cloneNode(true));
-    m.appendChild(modal);
-    document.body.appendChild(m);
-    const doClose = m.remove.bind(m);
-    m.addEventListener('click', e => {
-      if (e.target === m || e.target.classList.contains('modal-close')) doClose();
-    });
-    return { root: modal, doClose };
-  }
+  const tpl = document.getElementById(tplId);
+  if (!tpl) throw new Error('Nie znaleziono template: ' + tplId);
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.appendChild(tpl.content.cloneNode(true));
+
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  // ✅ безопасный способ закрытия
+  const doClose = () => {
+    if (backdrop && backdrop.parentNode) {
+      backdrop.parentNode.removeChild(backdrop);
+    }
+  };
+
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop || e.target.classList.contains('modal-close')) {
+      doClose();
+    }
+  });
+
+  return { root: modal, doClose };
+}
+
 
   // ======= MODALS =======
 
