@@ -413,7 +413,38 @@
     }
   }
 
+  // === Удалённые события ===
+  async function renderDeletedLog() {
+    const box = document.querySelector('#deleted-log');
+    box.innerHTML = '<tr><td colspan="4" class="muted">Wczytywanie...</td></tr>';
   
+    try {
+      const log = await api('/api/control/deleted');
+      if (!log.length) {
+        box.innerHTML = '<tr><td colspan="4" class="muted">Brak usunięć</td></tr>';
+        return;
+      }
+  
+      box.innerHTML = '';
+      for (const l of log) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${l.deleted_date}</td>
+          <td>${l.user_name}</td>
+          <td>${l.reason}</td>
+          <td><a href="#" class="link" data-id="${l.event_id}">#${l.event_id}</a></td>
+        `;
+        tr.querySelector('a').addEventListener('click', e => {
+          e.preventDefault();
+          showDeletedDetails(l.event_id);
+        });
+        box.appendChild(tr);
+      }
+    } catch (e) {
+      box.innerHTML = `<tr><td colspan="4" class="muted">Błąd: ${e.message}</td></tr>`;
+    }
+  }
+
 
 
   
