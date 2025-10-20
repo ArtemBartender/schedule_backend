@@ -59,7 +59,7 @@
   // ======= MODALS =======
 
   async function onLate(){
-    const {root, close} = openModal(`
+    const {root, doClose} = openModal(`
       <div class="modal-head">
         <div class="modal-title">Dodaj spóźnienie</div>
         <button class="modal-close">×</button>
@@ -92,7 +92,7 @@
   }
 
   async function onExtra(){
-    const {root, close} = openModal(`
+    const {root, doClose} = openModal(`
       <div class="modal-head">
         <div class="modal-title">Dodaj dodatkowe godziny</div>
         <button class="modal-close">×</button>
@@ -127,7 +127,7 @@
   }
 
   async function onAbsence(){
-    const {root, close} = openModal(`
+    const {root, doClose} = openModal(`
       <div class="modal-head">
         <div class="modal-title">Zgłoś nieobecność</div>
         <button class="modal-close">×</button>
@@ -158,7 +158,7 @@
   }
 
   async function onShift(){
-    const {root, close} = openModal(`
+    const {root, doClose} = openModal(`
       <div class="modal-head">
         <div class="modal-title">Dodaj zmianę</div>
         <button class="modal-close">×</button>
