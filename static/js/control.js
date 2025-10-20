@@ -71,7 +71,8 @@
           })
         });
         toast.success('Zapisano spóźnienie'); doClose(); await renderSummary();
-      } catch (e) { toast.error(e.message || 'Błąd'); }
+      } 
+      catch (e) { toast.error(e.message || 'Błąd'); }
     });
   }
 
