@@ -48,7 +48,7 @@
     const m = el('div','modal-backdrop');
     m.innerHTML = `<div class="modal">${html}</div>`;
     document.body.appendChild(m);
-    const doClose = ()=> m.remove();   
+    const doClose = ()=> m.remove();   // ← раньше было doClose()
     m.addEventListener('click', e=>{
       if (e.target===m || e.target.classList.contains('modal-close')) doClose();
     });
@@ -59,7 +59,7 @@
   // ======= MODALS =======
 
   async function onLate(){
-    const {root, doClose} = openModal(`
+    const {root, close} = openModal(`
       <div class="modal-head">
         <div class="modal-title">Dodaj spóźnienie</div>
         <button class="modal-close">×</button>
@@ -92,7 +92,7 @@
   }
 
   async function onExtra(){
-    const {root, doClose} = openModal(`
+    const {root, close} = openModal(`
       <div class="modal-head">
         <div class="modal-title">Dodaj dodatkowe godziny</div>
         <button class="modal-close">×</button>
@@ -127,7 +127,7 @@
   }
 
   async function onAbsence(){
-    const {root, doClose} = openModal(`
+    const {root, close} = openModal(`
       <div class="modal-head">
         <div class="modal-title">Zgłoś nieobecność</div>
         <button class="modal-close">×</button>
@@ -158,7 +158,7 @@
   }
 
   async function onShift(){
-    const {root, doClose} = openModal(`
+    const {root, close} = openModal(`
       <div class="modal-head">
         <div class="modal-title">Dodaj zmianę</div>
         <button class="modal-close">×</button>
