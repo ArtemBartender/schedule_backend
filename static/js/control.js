@@ -368,7 +368,8 @@
 
   async function showDeletedDetails(eventId) {
     try {
-      const data = await api(`/api/control/deleted/${eventId}`);
+      const data = await api(`/api/control/deleted/${eventId}`, { method: 'GET' });
+
       const modal = document.createElement('div');
       modal.className = 'modal-backdrop';
       modal.innerHTML = `
