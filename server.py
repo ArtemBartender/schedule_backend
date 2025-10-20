@@ -2792,10 +2792,10 @@ def upload_text():
 
 
 
+# ===== Удаление события =====
 @app.route('/api/control/delete', methods=['POST'])
 @jwt_required()
 def control_delete():
-    # JWT работает здесь, до контекста
     identity = get_jwt_identity()
     try:
         user_id = int(identity)
@@ -2809,18 +2809,19 @@ def control_delete():
     if not event_id or not reason:
         return jsonify({'error': 'Missing id or reason'}), 400
 
-    # теперь можно работать с БД
     from sqlalchemy import text
     from flask import current_app
 
     with current_app.app_context():
         session = db.session
         try:
+            # Вставляем только дату, без времени
             session.execute(text("""
                 INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
-                VALUES (:eid, :uid, :reason, datetime('now'))
+                VALUES (:eid, :uid, :reason, CURRENT_DATE)
             """), {'eid': event_id, 'uid': user_id, 'reason': reason})
 
+            # Удаляем из оригинальной таблицы
             session.execute(text("DELETE FROM control_events WHERE id = :eid"), {'eid': event_id})
             session.commit()
 
@@ -2834,28 +2835,29 @@ def control_delete():
 
 
 
-
-
-
+# ===== История удалений =====
 @app.route('/api/control/deleted')
 @jwt_required()
 def control_deleted_list():
-    # JWT до контекста!
     identity = get_jwt_identity()
+
+    from sqlalchemy import text
+    from flask import current_app
 
     with current_app.app_context():
         session = db.session
         try:
             rows = session.execute(text("""
                 SELECT 
-                    c.event_id,
+                    TO_CHAR(c.deleted_at, 'DD.MM.YYYY') AS deleted_date,
                     COALESCE(u.full_name, 'ID ' || c.deleted_by) AS user_name,
                     c.reason,
-                    c.deleted_at
+                    c.event_id
                 FROM control_deleted c
                 LEFT JOIN users u ON CAST(c.deleted_by AS INTEGER) = u.id
                 ORDER BY c.deleted_at DESC
             """)).mappings().all()
+
             return jsonify([dict(r) for r in rows])
         except Exception as e:
             import traceback
@@ -3041,6 +3043,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
