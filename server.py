@@ -2891,28 +2891,33 @@ def control_delete():
     if not event_id or not reason:
         return jsonify({'error': 'Missing id or reason'}), 400
 
-    # Получаем user_id по identity
-    user_id = db.session.execute(text("""
-        SELECT id FROM users WHERE email = :email
-    """), {'email': identity}).scalar()
+    # Определяем user_id по типу identity
+    user_id = None
+    if isinstance(identity, int):
+        user_id = identity
+    elif isinstance(identity, str):
+        user_id = db.session.execute(text("SELECT id FROM users WHERE email = :email"), {'email': identity}).scalar()
+    elif isinstance(identity, dict):
+        user_id = identity.get('id') or db.session.execute(
+            text("SELECT id FROM users WHERE email = :email"),
+            {'email': identity.get('email')}
+        ).scalar()
 
     if not user_id:
         return jsonify({'error': 'User not found'}), 404
 
-    # Сначала логируем удаление
+    # Логируем удаление
     db.session.execute(text("""
         INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
         VALUES (:eid, :uid, :reason, NOW())
     """), {'eid': event_id, 'uid': user_id, 'reason': reason})
 
-    # Потом удаляем оригинальное событие
-    db.session.execute(text("""
-        DELETE FROM control_events WHERE id = :eid
-    """), {'eid': event_id})
-
+    # Удаляем оригинал
+    db.session.execute(text("DELETE FROM control_events WHERE id = :eid"), {'eid': event_id})
     db.session.commit()
 
     return jsonify({'status': 'ok'})
+
 
 
 
@@ -2984,6 +2989,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
