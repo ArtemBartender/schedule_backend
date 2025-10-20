@@ -2791,6 +2791,7 @@ def upload_text():
 
 
 
+# ===== Удаление события =====
 @app.route('/api/control/delete', methods=['POST'])
 @jwt_required()
 def control_delete():
@@ -2804,31 +2805,57 @@ def control_delete():
 
     # 1️⃣ — достаём данные события
     event_data = db.session.execute(text("""
-        SELECT user_id, kind, event_date AS date, hours, time_from, time_to, reason AS event_reason
+        SELECT 
+            user_id, 
+            kind, 
+            event_date, 
+            hours, 
+            time_from, 
+            time_to, 
+            reason AS event_reason
         FROM control_events
         WHERE id = :eid
-
     """), {'eid': event_id}).mappings().first()
 
     if not event_data:
         return jsonify({'error': 'Event not found'}), 404
 
-    # 2️⃣ — копируем в backup (если таблица control_events_backup существует)
+    # 2️⃣ — копируем в backup
     db.session.execute(text("""
         INSERT INTO control_events_backup (
-            event_id, user_id, kind, event_date, hours, time_from, time_to, delay_minutes, reason, deleted_by, deleted_at
+            event_id, 
+            user_id, 
+            kind, 
+            event_date, 
+            hours, 
+            time_from, 
+            time_to, 
+            delay_minutes, 
+            reason, 
+            deleted_by, 
+            deleted_at
         ) VALUES (
-            :eid, :uid, :kind, :date, :hours, :tf, :tt, :delay, :reason, :deleted_by, CURRENT_TIMESTAMP
+            :eid, 
+            :uid, 
+            :kind, 
+            :event_date, 
+            :hours, 
+            :tf, 
+            :tt, 
+            :delay, 
+            :reason, 
+            :deleted_by, 
+            CURRENT_TIMESTAMP
         )
     """), {
         'eid': event_id,
         'uid': event_data['user_id'],
         'kind': event_data['kind'],
-        'date': event_data['date'],
-        'hours': event_data['hours'] or 0,
+        'event_date': event_data['event_date'],
+        'hours': float(event_data['hours'] or 0),
         'tf': event_data['time_from'],
         'tt': event_data['time_to'],
-        'delay': event_data.get('delay_minutes') or 0,
+        'delay': 0,  # можно добавить позже, если появится колонка
         'reason': event_data.get('event_reason') or '',
         'deleted_by': user_id
     })
@@ -2846,40 +2873,34 @@ def control_delete():
     return jsonify({'status': 'ok'})
 
 
-# ===== История удалений =====
-@app.route('/api/control/deleted')
+# ===== История удалений (список) =====
+@app.route('/api/control/deleted', methods=['GET'])
 @jwt_required()
 def control_deleted_list():
-    identity = get_jwt_identity()
+    rows = db.session.execute(text("""
+        SELECT 
+            c.event_id,
+            TO_CHAR(c.deleted_at, 'YYYY-MM-DD') AS deleted_date,
+            COALESCE(u.full_name, 'Użytkownik #' || c.deleted_by) AS user_name,
+            c.reason
+        FROM control_deleted c
+        LEFT JOIN users u ON CAST(c.deleted_by AS INTEGER) = u.id
+        ORDER BY c.deleted_at DESC
+    """)).mappings().all()
 
-    from sqlalchemy import text
-    from flask import current_app
+    result = []
+    for r in rows:
+        result.append({
+            'event_id': r['event_id'],
+            'deleted_date': r['deleted_date'],
+            'user_name': r['user_name'],
+            'reason': r['reason']
+        })
 
-    with current_app.app_context():
-        session = db.session
-        try:
-            rows = session.execute(text("""
-                SELECT 
-                    TO_CHAR(c.deleted_at, 'DD.MM.YYYY') AS deleted_date,
-                    COALESCE(u.full_name, 'ID ' || c.deleted_by) AS user_name,
-                    c.reason,
-                    c.event_id
-                FROM control_deleted c
-                LEFT JOIN users u ON CAST(c.deleted_by AS INTEGER) = u.id
-                ORDER BY c.deleted_at DESC
-            """)).mappings().all()
-
-            return jsonify([dict(r) for r in rows])
-        except Exception as e:
-            import traceback
-            print("❌ /api/control/deleted error:", e)
-            traceback.print_exc()
-            return jsonify({'error': str(e)}), 500
+    return jsonify(result)
 
 
-
-
-
+# ===== Детали удалённого события =====
 @app.route('/api/control/deleted/<int:event_id>', methods=['GET'])
 @jwt_required()
 def control_deleted_details(event_id):
@@ -2913,12 +2934,9 @@ def control_deleted_details(event_id):
         'hours': float(row['hours']) if row['hours'] else None,
         'user_name': row['user_name'],
         'deleted_by_name': row['deleted_by_name'],
-        'deleted_date': row['deleted_at'].strftime('%Y-%m-%d'),
+        'deleted_date': row['deleted_at'].strftime('%Y-%m-%d') if row['deleted_at'] else None,
         'reason': row['reason']
     })
-
-
-
 
 
 
@@ -3095,6 +3113,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
