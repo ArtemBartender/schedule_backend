@@ -2880,33 +2880,43 @@ def control_deleted_list():
 
 
 
-@app.route('/api/control/deleted/<int:event_id>')
+@app.route('/api/control/deleted/<int:event_id>', methods=['GET'])
 @jwt_required()
 def control_deleted_details(event_id):
-    event = db.session.execute(text("""
-        SELECT 
-            b.event_id,
-            TO_CHAR(b.deleted_at, 'YYYY-MM-DD HH24:MI') AS deleted_date,
-            b.kind,
-            b.date,
-            b.hours,
-            b.time_from,
-            b.time_to,
-            b.delay_minutes,
-            b.reason AS event_reason,
-            du.full_name AS deleted_by,
-            u.full_name AS user_name
-        FROM control_events_backup b
-        LEFT JOIN users u ON u.id = b.user_id
-        LEFT JOIN users du ON du.id = b.deleted_by
-        WHERE b.event_id = :eid
-        ORDER BY b.deleted_at DESC
-        LIMIT 1
+    row = db.session.execute(text("""
+        SELECT
+            ceb.event_id,
+            ceb.kind,
+            ceb.event_date,
+            ceb.time_from,
+            ceb.time_to,
+            ceb.hours,
+            u1.full_name AS user_name,
+            u2.full_name AS deleted_by_name,
+            ceb.reason,
+            ceb.deleted_at
+        FROM control_events_backup ceb
+        LEFT JOIN users u1 ON u1.id = ceb.user_id
+        LEFT JOIN users u2 ON u2.id = ceb.deleted_by
+        WHERE ceb.event_id = :eid
     """), {'eid': event_id}).mappings().first()
 
-    if not event:
+    if not row:
         return jsonify({'error': 'Not found'}), 404
-    return jsonify(dict(event))
+
+    return jsonify({
+        'event_id': row['event_id'],
+        'kind': row['kind'],
+        'event_date': row['event_date'].strftime('%Y-%m-%d') if row['event_date'] else None,
+        'time_from': row['time_from'],
+        'time_to': row['time_to'],
+        'hours': float(row['hours']) if row['hours'] else None,
+        'user_name': row['user_name'],
+        'deleted_by_name': row['deleted_by_name'],
+        'deleted_date': row['deleted_at'].strftime('%Y-%m-%d'),
+        'reason': row['reason']
+    })
+
 
 
 
@@ -3085,6 +3095,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
