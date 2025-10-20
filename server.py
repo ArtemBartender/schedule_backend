@@ -2804,9 +2804,10 @@ def control_delete():
 
     # 1️⃣ — достаём данные события
     event_data = db.session.execute(text("""
-        SELECT user_id, kind, event_date AS date, hours, time_from, time_to, delay_minutes, reason AS event_reason
+        SELECT user_id, kind, event_date AS date, hours, time_from, time_to, reason AS event_reason
         FROM control_events
         WHERE id = :eid
+
     """), {'eid': event_id}).mappings().first()
 
     if not event_data:
@@ -3084,6 +3085,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
