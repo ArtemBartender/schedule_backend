@@ -2795,23 +2795,26 @@ def upload_text():
 @app.route('/api/control/delete', methods=['POST'])
 @jwt_required()
 def control_delete():
-    # создаём сессию безопасно внутри контекста
+    # JWT работает здесь, до контекста
+    identity = get_jwt_identity()
+    try:
+        user_id = int(identity)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid user identity'}), 400
+
+    data = request.get_json()
+    event_id = data.get('id')
+    reason = (data.get('reason') or '').strip()
+
+    if not event_id or not reason:
+        return jsonify({'error': 'Missing id or reason'}), 400
+
+    # теперь можно работать с БД
+    from sqlalchemy import text
+    from flask import current_app
+
     with current_app.app_context():
         session = db.session
-
-        data = request.get_json()
-        event_id = data.get('id')
-        reason = (data.get('reason') or '').strip()
-        identity = get_jwt_identity()
-
-        try:
-            user_id = int(identity)
-        except (ValueError, TypeError):
-            return jsonify({'error': 'Invalid user identity'}), 400
-
-        if not event_id or not reason:
-            return jsonify({'error': 'Missing id or reason'}), 400
-
         try:
             session.execute(text("""
                 INSERT INTO control_deleted (event_id, deleted_by, reason, deleted_at)
@@ -2833,9 +2836,13 @@ def control_delete():
 
 
 
+
 @app.route('/api/control/deleted')
 @jwt_required()
 def control_deleted_list():
+    # JWT до контекста!
+    identity = get_jwt_identity()
+
     with current_app.app_context():
         session = db.session
         try:
@@ -2855,9 +2862,6 @@ def control_deleted_list():
             print("❌ /api/control/deleted error:", e)
             traceback.print_exc()
             return jsonify({'error': str(e)}), 500
-
-
-
 
 
 
@@ -3037,6 +3041,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
