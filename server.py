@@ -2918,6 +2918,11 @@ def control_deleted_list():
 
 
 
+@app.route('/favicon.ico')
+def favicon():
+    # Возвращаем 204 No Content, чтобы браузер отстал
+    return '', 204
+
 
 # ---------------------------------
 # Pages
@@ -2977,6 +2982,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
