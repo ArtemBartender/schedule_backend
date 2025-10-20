@@ -365,4 +365,56 @@
 
   (async () => { await loadUsers(); await renderSummary(); })();
 
+  async function showDeletedDetails(eventId) {
+    try {
+      const data = await api(`/api/control/deleted/${eventId}`);
+      const modal = document.createElement('div');
+      modal.className = 'modal-backdrop';
+      modal.innerHTML = `
+        <div class="modal">
+          <h3>🗑️ Szczegóły usuniętego zdarzenia</h3>
+          <div class="modal-content">
+            <p><b>ID zdarzenia:</b> #${data.event_id}</p>
+            <p><b>Rodzaj:</b> ${data.kind || '—'}</p>
+            <p><b>Data zdarzenia:</b> ${data.date || '—'}</p>
+            <p><b>Godziny:</b> ${data.time_from || '?'} - ${data.time_to || '?'}</p>
+            <p><b>Ilość godzin:</b> ${data.hours || '—'}</p>
+            <p><b>Osoba:</b> ${data.user_name || '—'}</p>
+            <hr>
+            <p><b>Usunięto przez:</b> ${data.deleted_by}</p>
+            <p><b>Data usunięcia:</b> ${data.deleted_date}</p>
+            <p><b>Powód:</b> ${data.event_reason || data.reason || '—'}</p>
+          </div>
+          <div class="modal-actions">
+            <button class="btn-secondary" id="close-modal">Zamknij</button>
+            <button class="btn-primary" id="restore-event">Przywróć</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+  
+      // закрыть
+      document.querySelector('#close-modal').addEventListener('click', () => modal.remove());
+  
+      // восстановить
+      document.querySelector('#restore-event').addEventListener('click', async () => {
+        if (!confirm('Czy na pewno chcesz przywrócić to zdarzenie?')) return;
+        try {
+          await api(`/api/control/restore/${eventId}`, { method: 'POST' });
+          toast.success('Zdarzenie zostało przywrócone!');
+          modal.remove();
+          renderSummary(); // обновим список
+        } catch (err) {
+          toast.error('Błąd przy przywracaniu: ' + err.message);
+        }
+      });
+    } catch (err) {
+      alert('Błąd: ' + err.message);
+    }
+  }
+
+  
+
+
+  
 })();
