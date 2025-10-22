@@ -345,6 +345,7 @@
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td>${new Date(l.deleted_date).toLocaleDateString('pl-PL')}</td>
+
             <td>${l.user_name || '-'}</td>
             <td>${l.reason || '-'}</td>
             <td>#${l.event_id}</td>
@@ -355,15 +356,15 @@
     } catch (e) {
       console.warn('no log', e);
     }
-    
-    // 👇 Добавь это сюда, после блока try/catch:
-    await renderDeletedLog();
+  }
 
 
   document.getElementById('btn-late')?.addEventListener('click', onLate);
   document.getElementById('btn-extra')?.addEventListener('click', onExtra);
   document.getElementById('btn-absence')?.addEventListener('click', onAbsence);
   document.getElementById('btn-shift')?.addEventListener('click', onShift);
+
+  (async () => { await loadUsers(); await renderSummary(); })();
 
   async function showDeletedDetails(eventId) {
     try {
@@ -441,10 +442,7 @@
     }
   }
 
-  // === запуск ===
-  (async () => {
-    await loadUsers();
-    await renderSummary();
-  })();
 
-})(); // <-- ВАЖНО: это одно-единственное закрытие initControl
+
+  
+})();
