@@ -441,7 +441,7 @@
     }
   }
 
-(async () => { await loadUsers(); await renderSummary(); })();
-
-  
+(async () => {
+  await loadUsers();
+  await renderSummary();
 })();
