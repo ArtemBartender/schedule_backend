@@ -365,8 +365,6 @@
   document.getElementById('btn-absence')?.addEventListener('click', onAbsence);
   document.getElementById('btn-shift')?.addEventListener('click', onShift);
 
-  (async () => { await loadUsers(); await renderSummary(); })();
-
   async function showDeletedDetails(eventId) {
     try {
       const data = await api(`/api/control/deleted/${eventId}`, { method: 'GET' });
@@ -443,7 +441,7 @@
     }
   }
 
-
+(async () => { await loadUsers(); await renderSummary(); })();
 
   
 })();
