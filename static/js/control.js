@@ -441,9 +441,10 @@
     }
   }
 
+  // === запуск ===
   (async () => {
     await loadUsers();
     await renderSummary();
   })();
 
-})();
+})(); // <-- ВАЖНО: это одно-единственное закрытие initControl
