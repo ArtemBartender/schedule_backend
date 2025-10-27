@@ -2620,50 +2620,60 @@ def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
 @jwt_required()
 def upload_xlsx():
     """Импорт графика из XLSX (цвет цифры -> lounge, цвет заливки -> coord_lounge)."""
+
     claims = get_jwt() or {}
     if (claims.get('role') or '').lower() != 'admin':
         return jsonify({'error': 'Tylko administrator może przesyłać XLSX.'}), 403
 
+    # --- Проверка формы ---
     f = request.files.get('file')
-    year  = int(request.form.get('year') or 0)
+    year = int(request.form.get('year') or 0)
     month = int(request.form.get('month') or 0)
+
     if not f or f.filename == '':
         return jsonify({'error': 'Nie znaleziono pliku (file).'}), 400
     if not (2000 <= year <= 2100 and 1 <= month <= 12):
         return jsonify({'error': 'Podaj poprawny rok i miesiąc.'}), 400
 
     data = f.read()
+
+    # --- Парсинг XLSX ---
     try:
         rows = parse_schedule_xlsx(data, year, month)
     except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(tb)
         return jsonify({'error': f'Błąd odczytu XLSX: {e}'}), 400
 
-    # --- Очистка только выбранного месяца (сначала market_offers, затем shifts)
+    # --- Очистка данных выбранного месяца ---
     first = _date(year, month, 1)
-    last  = _date(year, month, monthrange(year, month)[1])
+    last = _date(year, month, monthrange(year, month)[1])
 
-    db.session.execute(sqltext("""
-        DELETE FROM market_offers
-        WHERE shift_id IN (
-          SELECT id FROM shifts
-          WHERE shift_date BETWEEN :d1 AND :d2
-        )
-    """), {'d1': first, 'd2': last})
+    try:
+        db.session.execute(sqltext("""
+            DELETE FROM market_offers
+            WHERE shift_id IN (
+              SELECT id FROM shifts
+              WHERE shift_date BETWEEN :d1 AND :d2
+            )
+        """), {'d1': first, 'd2': last})
 
-    db.session.execute(sqltext("""
-        DELETE FROM shifts
-        WHERE shift_date BETWEEN :d1 AND :d2
-    """), {'d1': first, 'd2': last})
+        db.session.execute(sqltext("""
+            DELETE FROM shifts
+            WHERE shift_date BETWEEN :d1 AND :d2
+        """), {'d1': first, 'd2': last})
 
-    db.session.flush()
+        db.session.flush()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Błąd czyszczenia bazy danych: {e}'}), 500
 
-    # --- Подготовка пользователей
+    # --- Подготовка пользователей ---
     users_by_key = {_norm(u.full_name): u for u in User.query.all()}
     imported = 0
     created_users = []
-
-    # Защита от дублей в рамках ОДНОГО файла: (user_id, date)
-    seen_pairs = set()
+    seen_pairs = set()  # (user_id, date)
 
     for r in rows:
         name = (r.get('name') or '').strip()
@@ -2679,33 +2689,42 @@ def upload_xlsx():
             users_by_key[key] = u
             created_users.append(u.full_name)
 
-        d_iso = r.get('date')  # 'YYYY-MM-DD'
+        d_iso = r.get('date')
         if not d_iso:
             continue
 
         pair = (u.id, d_iso)
         if pair in seen_pairs:
-            # дубль этой же смены в файле — пропускаем
             continue
         seen_pairs.add(pair)
 
+        # --- создаём смену ---
         sh = Shift(
             user_id=u.id,
             shift_date=d_iso,
             shift_code=r.get('shift') or '',
             hours=None,
-            lounge=(r.get('lounge') or None),            # НОВОЕ — обычная локация (цвет цифры)
-            coord_lounge=(r.get('coord_lounge') or None) # НОВОЕ — если ячейка была подсвечена как координатор
+            lounge=(r.get('lounge') or None),
+            coord_lounge=(r.get('coord_lounge') or None)
         )
-    
-        # сохраняем только coord_lounge (колонка существует)
-        sh.coord_lounge = r.get('coord_lounge') or None
 
         db.session.add(sh)
         imported += 1
 
-    db.session.commit()
-    return jsonify({'imported': imported, 'created_users': created_users})
+    # --- Сохранение ---
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': f'Błąd zapisu do bazy: {e}'}), 500
+
+    return jsonify({
+        'status': 'OK',
+        'imported': imported,
+        'created_users': created_users
+    })
 
 
 @app.post('/api/upload-text')
@@ -3114,6 +3133,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
