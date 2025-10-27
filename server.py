@@ -2470,17 +2470,18 @@ def upload_pdf_advanced():
     db.session.commit()
     return jsonify({'imported': imported, 'created_users': created_users})
 
+# ===== XLSX schedule import (with colors) =====
 from typing import Optional, Tuple
 from openpyxl import load_workbook
-import io
 
 def _rgb_from_openpyxl(color) -> Optional[Tuple[int,int,int]]:
     """
-    openpyxl color может быть theme, indexed или ARGB ('FFRRGGBB'/'RRGGBB').
+    openpyxl color can be theme, indexed, or ARGB like 'FFRRGGBB'/'RRGGBB'.
     Возвращает (R,G,B) в 0..255 или None.
     """
     if not color:
         return None
+    # try .rgb first
     rgb = getattr(color, "rgb", None)
     if rgb:
         rgb = str(rgb).upper()
@@ -2490,10 +2491,9 @@ def _rgb_from_openpyxl(color) -> Optional[Tuple[int,int,int]]:
         if len(rgb) == 6:  # RRGGBB
             r = int(rgb[0:2], 16); g = int(rgb[2:4], 16); b = int(rgb[4:6], 16)
             return (r,g,b)
+    # sometimes theme/indexed -> no direct rgb
     return None
 
-
-# --- Цветовые классификаторы ---
 def _is_blue(rgb: Optional[Tuple[int,int,int]]) -> bool:
     if not rgb: return False
     r,g,b = rgb
@@ -2502,22 +2502,18 @@ def _is_blue(rgb: Optional[Tuple[int,int,int]]) -> bool:
 def _is_black(rgb: Optional[Tuple[int,int,int]]) -> bool:
     if not rgb: return False
     r,g,b = rgb
-    return (r+g+b) <= 120
+    return (r+g+b) <= 120  # тёмное/чёрное
 
 def _is_yellow(rgb: Optional[Tuple[int,int,int]]) -> bool:
     if not rgb: return False
     r,g,b = rgb
     return r >= 200 and g >= 180 and b <= 140
 
-def _is_red(rgb: Optional[Tuple[int,int,int]]) -> bool:
-    """Красные цифры — теперь считаем Polonez."""
-    if not rgb: return False
-    r,g,b = rgb
-    return r >= 180 and g <= 100 and b <= 100
-
-
-# --- Нормализация кода смены ---
 def _normalize_code(raw: str) -> Optional[str]:
+    """
+    '1', '2', '1/B', '2/B', '1B', '2B', '1 B', 'X' -> нормализует.
+    Возвращает None если пусто/выходной.
+    """
     if raw is None: return None
     s = str(raw).strip().upper().replace(' ', '')
     if not s or s in {'X','—','-'}:
@@ -2527,18 +2523,11 @@ def _normalize_code(raw: str) -> Optional[str]:
     if s in {'2/B','2B'}: return '2/B'
     return None
 
-
-# --- Основной парсер XLSX ---
 def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
     """
-    Возвращает list[dict]: 
-    {
-        name,
-        date:'YYYY-MM-DD',
-        shift:'1|2|1/B|2/B',
-        lounge,         # цвет цифры: blue -> mazurek, black/red -> polonez
-        coord_lounge    # цвет заливки: blue -> mazurek, yellow -> polonez (но не для 1/B, 2/B)
-    }
+    Возвращает list[dict]: {name, date:'YYYY-MM-DD', shift:'1|2|1/B|2/B', lounge, coord_lounge}
+    lounge: голубой цвет цифры -> 'mazurek', чёрный -> 'polonez'
+    coord_lounge: голубая заливка -> 'mazurek', жёлтая -> 'polonez'
     """
     from datetime import date as _date_cls
     from calendar import monthrange
@@ -2546,38 +2535,42 @@ def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
     wb = load_workbook(io.BytesIO(xlsx_bytes), data_only=True)
     ws = wb.active
 
-    # --- 1) Поиск строки с заголовками (дни 1..31) ---
+    # --- 1) найдём строку с заголовками дней (1..31) ---
     header_row = None
-    day_cols: list[tuple[int,int]] = []
+    day_cols: list[tuple[int,int]] = []  # [(col_idx_1based, day)]
+    # пробуем первые 5 строк
     for r in range(1, 6):
         row_vals = [c.value for c in ws[r]]
         tmp = []
-        for j, val in enumerate(row_vals, start=1):
+        for j, val in enumerate(row_vals, start=1):  # 1-based
             try:
                 d = int(str(val).strip())
             except Exception:
                 continue
             if 1 <= d <= 31:
                 tmp.append((j, d))
-        if len(tmp) >= 8:
+        if len(tmp) >= 8:  # разумный минимум для строки дат
             header_row = r
             day_cols = tmp
             break
     if not day_cols:
         raise ValueError("Не найдена строка с датами (1..31).")
 
+    # --- 1b) если в шапке все дни одинаковые/сломанные — назначаем по порядку ---
     days_in_month = monthrange(year, month)[1]
     uniq = {d for _, d in day_cols}
-    if len(uniq) <= max(1, len(day_cols)//4):
+    if len(uniq) <= max(1, len(day_cols)//4):  # грубый критерий «подозрительно мало»
+        # берём только первые N столбцов = число дней в месяце
         day_cols = [(col_idx, i+1) for i, (col_idx, _) in enumerate(day_cols[:days_in_month])]
 
+    # на всякий случай отфильтруем дни > фактических
     day_cols = [(c, d) for (c, d) in day_cols if 1 <= d <= days_in_month]
     if not day_cols:
         raise ValueError("В шапке нет корректных чисел дней для указанного месяца.")
 
     out = []
 
-    # --- 2) Построчно разбираем сотрудников ---
+    # --- 2) разбираем строки сотрудников ---
     for row in ws.iter_rows(min_row=header_row+1):
         name_cell = row[0]
         full_name = (name_cell.value or "").strip() if name_cell.value else ""
@@ -2589,27 +2582,28 @@ def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
 
         for col_idx, day in day_cols:
             cell = ws.cell(row=name_cell.row, column=col_idx)
+
+            # нормализуем код смены
+            def _normalize_code(raw):
+                if raw is None: return None
+                s = str(raw).strip().upper().replace(' ', '')
+                if not s or s in {'X','—','-'}: return None
+                if s in {'1','2'}: return s
+                if s in {'1/B','1B'}: return '1/B'
+                if s in {'2/B','2B'}: return '2/B'
+                return None
+
             code = _normalize_code(cell.value)
             if not code:
                 continue
 
-            # --- lounge по цвету цифры ---
+            # цвет цифры (font.color) -> lounge
             font_rgb = _rgb_from_openpyxl(getattr(cell.font, 'color', None))
-            if _is_blue(font_rgb):
-                lounge = 'mazurek'
-            elif _is_black(font_rgb) or _is_red(font_rgb):
-                lounge = 'polonez'
-            else:
-                lounge = None
+            lounge = 'mazurek' if _is_blue(font_rgb) else ('polonez' if _is_black(font_rgb) else None)
 
-            # --- coord_lounge по цвету заливки ---
+            # цвет заливки (fill.start_color) -> координатор
             fill_rgb = _rgb_from_openpyxl(getattr(cell.fill, 'start_color', None))
-            if _is_blue(fill_rgb):
-                coord_lounge = 'mazurek'
-            elif _is_yellow(fill_rgb) and code not in {'1/B', '2/B'}:
-                coord_lounge = 'polonez'
-            else:
-                coord_lounge = None
+            coord_lounge = 'mazurek' if _is_blue(fill_rgb) else ('polonez' if _is_yellow(fill_rgb) else None)
 
             out.append({
                 'name': full_name,
@@ -2620,6 +2614,99 @@ def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
             })
 
     return out
+
+
+@app.post('/api/upload-xlsx')
+@jwt_required()
+def upload_xlsx():
+    """Импорт графика из XLSX (цвет цифры -> lounge, цвет заливки -> coord_lounge)."""
+    claims = get_jwt() or {}
+    if (claims.get('role') or '').lower() != 'admin':
+        return jsonify({'error': 'Tylko administrator może przesyłać XLSX.'}), 403
+
+    f = request.files.get('file')
+    year  = int(request.form.get('year') or 0)
+    month = int(request.form.get('month') or 0)
+    if not f or f.filename == '':
+        return jsonify({'error': 'Nie znaleziono pliku (file).'}), 400
+    if not (2000 <= year <= 2100 and 1 <= month <= 12):
+        return jsonify({'error': 'Podaj poprawny rok i miesiąc.'}), 400
+
+    data = f.read()
+    try:
+        rows = parse_schedule_xlsx(data, year, month)
+    except Exception as e:
+        return jsonify({'error': f'Błąd odczytu XLSX: {e}'}), 400
+
+    # --- Очистка только выбранного месяца (сначала market_offers, затем shifts)
+    first = _date(year, month, 1)
+    last  = _date(year, month, monthrange(year, month)[1])
+
+    db.session.execute(sqltext("""
+        DELETE FROM market_offers
+        WHERE shift_id IN (
+          SELECT id FROM shifts
+          WHERE shift_date BETWEEN :d1 AND :d2
+        )
+    """), {'d1': first, 'd2': last})
+
+    db.session.execute(sqltext("""
+        DELETE FROM shifts
+        WHERE shift_date BETWEEN :d1 AND :d2
+    """), {'d1': first, 'd2': last})
+
+    db.session.flush()
+
+    # --- Подготовка пользователей
+    users_by_key = {_norm(u.full_name): u for u in User.query.all()}
+    imported = 0
+    created_users = []
+
+    # Защита от дублей в рамках ОДНОГО файла: (user_id, date)
+    seen_pairs = set()
+
+    for r in rows:
+        name = (r.get('name') or '').strip()
+        if not name:
+            continue
+
+        key = _norm(name)
+        u = users_by_key.get(key)
+        if not u:
+            u = User(full_name=name, role='user')
+            db.session.add(u)
+            db.session.flush()
+            users_by_key[key] = u
+            created_users.append(u.full_name)
+
+        d_iso = r.get('date')  # 'YYYY-MM-DD'
+        if not d_iso:
+            continue
+
+        pair = (u.id, d_iso)
+        if pair in seen_pairs:
+            # дубль этой же смены в файле — пропускаем
+            continue
+        seen_pairs.add(pair)
+
+        sh = Shift(
+            user_id=u.id,
+            shift_date=d_iso,
+            shift_code=r.get('shift') or '',
+            hours=None,
+            lounge=(r.get('lounge') or None),            # НОВОЕ — обычная локация (цвет цифры)
+            coord_lounge=(r.get('coord_lounge') or None) # НОВОЕ — если ячейка была подсвечена как координатор
+        )
+    
+        # сохраняем только coord_lounge (колонка существует)
+        sh.coord_lounge = r.get('coord_lounge') or None
+
+        db.session.add(sh)
+        imported += 1
+
+    db.session.commit()
+    return jsonify({'imported': imported, 'created_users': created_users})
+
 
 @app.post('/api/upload-text')
 @jwt_required()
@@ -3027,8 +3114,6 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
-
-
 
 
 
