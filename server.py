@@ -2476,22 +2476,18 @@ from openpyxl import load_workbook
 
 def _rgb_from_openpyxl(color) -> Optional[Tuple[int,int,int]]:
     """
-    openpyxl color can be theme, indexed, or ARGB like 'FFRRGGBB'/'RRGGBB'.
-    Возвращает (R,G,B) в 0..255 или None.
+    openpyxl color может быть theme/indexed или ARGB 'FFRRGGBB'/'RRGGBB'.
+    Возвращает (R,G,B) или None.
     """
     if not color:
         return None
-    # try .rgb first
     rgb = getattr(color, "rgb", None)
     if rgb:
         rgb = str(rgb).upper()
         if len(rgb) == 8:  # AARRGGBB
-            r = int(rgb[2:4], 16); g = int(rgb[4:6], 16); b = int(rgb[6:8], 16)
-            return (r,g,b)
+            return (int(rgb[2:4], 16), int(rgb[4:6], 16), int(rgb[6:8], 16))
         if len(rgb) == 6:  # RRGGBB
-            r = int(rgb[0:2], 16); g = int(rgb[2:4], 16); b = int(rgb[4:6], 16)
-            return (r,g,b)
-    # sometimes theme/indexed -> no direct rgb
+            return (int(rgb[0:2], 16), int(rgb[2:4], 16), int(rgb[4:6], 16))
     return None
 
 def _is_blue(rgb: Optional[Tuple[int,int,int]]) -> bool:
@@ -2502,75 +2498,93 @@ def _is_blue(rgb: Optional[Tuple[int,int,int]]) -> bool:
 def _is_black(rgb: Optional[Tuple[int,int,int]]) -> bool:
     if not rgb: return False
     r,g,b = rgb
-    return (r+g+b) <= 120  # тёмное/чёрное
+    return (r+g+b) <= 120
 
 def _is_yellow(rgb: Optional[Tuple[int,int,int]]) -> bool:
     if not rgb: return False
     r,g,b = rgb
     return r >= 200 and g >= 180 and b <= 140
 
+def _is_red(rgb: Optional[Tuple[int,int,int]]) -> bool:
+    # красные цифры считаем Polonez
+    if not rgb: return False
+    r,g,b = rgb
+    return r >= 180 and g <= 110 and b <= 110
+
 def _normalize_code(raw: str) -> Optional[str]:
     """
-    '1', '2', '1/B', '2/B', '1B', '2B', '1 B', 'X' -> нормализует.
-    Возвращает None если пусто/выходной.
+    Приводим к: '1', '2', '1/B', '2/B'.
+    Поддержка вариантов: 1\B, 2\B, 1/В, 2/В, 1B, 2B, пробелы, тире/—/X как пусто.
     """
-    if raw is None: return None
-    s = str(raw).strip().upper().replace(' ', '')
-    if not s or s in {'X','—','-'}:
+    if raw is None:
         return None
-    if s in {'1','2'}: return s
-    if s in {'1/B','1B'}: return '1/B'
-    if s in {'2/B','2B'}: return '2/B'
+    s = str(raw).strip()
+    if not s:
+        return None
+
+    # унификация: в верхний регистр, убираем пробелы
+    s = s.upper().replace(' ', '')
+
+    # обратный слэш → прямой
+    s = s.replace('\\', '/')
+
+    # кириллическая 'В' → латинская 'B'
+    s = s.replace('В', 'B')  # U+0412
+
+    # стандартные пустые значения
+    if s in {'', 'X', '—', '-'}:
+        return None
+
+    if s in {'1', '2'}:
+        return s
+    if s in {'1/B', '1B'}:
+        return '1/B'
+    if s in {'2/B', '2B'}:
+        return '2/B'
     return None
 
 def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
     """
     Возвращает list[dict]: {name, date:'YYYY-MM-DD', shift:'1|2|1/B|2/B', lounge, coord_lounge}
-    lounge: голубой цвет цифры -> 'mazurek', чёрный -> 'polonez'
-    coord_lounge: голубая заливка -> 'mazurek', жёлтая -> 'polonez'
+    lounge: голубой цвет цифры -> 'mazurek', чёрный/красный -> 'polonez'
+    coord_lounge: голубая заливка -> 'mazurek', жёлтая -> 'polonez' (НО не для 1/B,2/B)
     """
     from datetime import date as _date_cls
     from calendar import monthrange
-
     wb = load_workbook(io.BytesIO(xlsx_bytes), data_only=True)
     ws = wb.active
 
-    # --- 1) найдём строку с заголовками дней (1..31) ---
+    # --- 1) строка с днями ---
     header_row = None
-    day_cols: list[tuple[int,int]] = []  # [(col_idx_1based, day)]
-    # пробуем первые 5 строк
+    day_cols: list[tuple[int,int]] = []
     for r in range(1, 6):
         row_vals = [c.value for c in ws[r]]
         tmp = []
-        for j, val in enumerate(row_vals, start=1):  # 1-based
+        for j, val in enumerate(row_vals, start=1):
             try:
                 d = int(str(val).strip())
             except Exception:
                 continue
             if 1 <= d <= 31:
                 tmp.append((j, d))
-        if len(tmp) >= 8:  # разумный минимум для строки дат
+        if len(tmp) >= 8:
             header_row = r
             day_cols = tmp
             break
     if not day_cols:
         raise ValueError("Не найдена строка с датами (1..31).")
 
-    # --- 1b) если в шапке все дни одинаковые/сломанные — назначаем по порядку ---
     days_in_month = monthrange(year, month)[1]
     uniq = {d for _, d in day_cols}
-    if len(uniq) <= max(1, len(day_cols)//4):  # грубый критерий «подозрительно мало»
-        # берём только первые N столбцов = число дней в месяце
+    if len(uniq) <= max(1, len(day_cols)//4):
         day_cols = [(col_idx, i+1) for i, (col_idx, _) in enumerate(day_cols[:days_in_month])]
-
-    # на всякий случай отфильтруем дни > фактических
     day_cols = [(c, d) for (c, d) in day_cols if 1 <= d <= days_in_month]
     if not day_cols:
         raise ValueError("В шапке нет корректных чисел дней для указанного месяца.")
 
     out = []
 
-    # --- 2) разбираем строки сотрудников ---
+    # --- 2) строки сотрудников ---
     for row in ws.iter_rows(min_row=header_row+1):
         name_cell = row[0]
         full_name = (name_cell.value or "").strip() if name_cell.value else ""
@@ -2583,27 +2597,29 @@ def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
         for col_idx, day in day_cols:
             cell = ws.cell(row=name_cell.row, column=col_idx)
 
-            # нормализуем код смены
-            def _normalize_code(raw):
-                if raw is None: return None
-                s = str(raw).strip().upper().replace(' ', '')
-                if not s or s in {'X','—','-'}: return None
-                if s in {'1','2'}: return s
-                if s in {'1/B','1B'}: return '1/B'
-                if s in {'2/B','2B'}: return '2/B'
-                return None
-
             code = _normalize_code(cell.value)
             if not code:
                 continue
 
-            # цвет цифры (font.color) -> lounge
+            # --- цвет цифры -> lounge ---
             font_rgb = _rgb_from_openpyxl(getattr(cell.font, 'color', None))
-            lounge = 'mazurek' if _is_blue(font_rgb) else ('polonez' if _is_black(font_rgb) else None)
+            if _is_blue(font_rgb):
+                lounge = 'mazurek'
+            elif _is_black(font_rgb) or _is_red(font_rgb):
+                lounge = 'polonez'
+            else:
+                lounge = None
 
-            # цвет заливки (fill.start_color) -> координатор
-            fill_rgb = _rgb_from_openpyxl(getattr(cell.fill, 'start_color', None))
-            coord_lounge = 'mazurek' if _is_blue(fill_rgb) else ('polonez' if _is_yellow(fill_rgb) else None)
+            # --- цвет заливки -> coord_lounge (учитываем start_color И fgColor) ---
+            fill_obj = getattr(cell.fill, 'start_color', None) or getattr(cell.fill, 'fgColor', None)
+            fill_rgb = _rgb_from_openpyxl(fill_obj)
+
+            if _is_blue(fill_rgb):
+                coord_lounge = 'mazurek'
+            elif _is_yellow(fill_rgb) and code not in {'1/B', '2/B'}:
+                coord_lounge = 'polonez'
+            else:
+                coord_lounge = None
 
             out.append({
                 'name': full_name,
@@ -2614,6 +2630,7 @@ def parse_schedule_xlsx(xlsx_bytes: bytes, year: int, month: int):
             })
 
     return out
+
 
 
 @app.post('/api/upload-xlsx')
@@ -3133,6 +3150,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
