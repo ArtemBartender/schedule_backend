@@ -382,7 +382,6 @@
           }
         }
       });
-    });
 
     window.toast = {
       show(msg, type = 'info', opts = {}) {
@@ -521,6 +520,7 @@
   })();
 
 })();
+
 
 
 
