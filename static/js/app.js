@@ -559,15 +559,23 @@ async function api(path, opts = {}) {
     overlay.addEventListener('click', e=>{ if (e.target===overlay || e.target.classList.contains('modal-close')) close(); });
 
     const grid = overlay.querySelector('#pick-grid');
-    buildMonthGrid(grid, new Date(their_date+'T12:00:00'), my, async (my_date)=>{
-      try{
-        await api('/api/proposals', { method:'POST', body: JSON.stringify({ target_user_id, my_date, their_date }) });
+    buildMonthGrid(grid, new Date(their_date + 'T12:00:00'), my, async (my_date) => {
+      try {
+        await api('/api/proposals', {
+          method: 'POST',
+          body: JSON.stringify({ target_user_id, my_date, their_date })
+        });
         close();
-        window.location.href = '/proposals';
-      }catch(err){
-        alert(err?.message || 'Błąd wysyłki propozycji');
+    
+        // ✅ красивый тост вместо alert
+        toast.success('✅ Prośba wysłana do właściciela zmiany');
+        setTimeout(() => window.location.href = '/proposals', 1500);
+    
+      } catch (err) {
+        toast.error(err?.message || '❌ Błąd wysyłki propozycji');
       }
     });
+
   }
 
   // ===== Propozycje zamian =====
@@ -599,22 +607,57 @@ async function api(path, opts = {}) {
 
     const actions = createEl('div','swap-actions');
     actions.appendChild(statusBadge(p.status));
-
-    if (type === 'in' && p.status === 'pending'){
-      const acc = createEl('button','swap-btn'); acc.textContent = 'Akceptuj';
-      const dec = createEl('button','swap-btn'); dec.textContent = 'Odrzuć';
-      acc.addEventListener('click', async ()=>{ try{ await api(`/api/proposals/${p.id}/accept`, {method:'POST'}); openProposalsInbox(true); }catch(err){ alert(err?.message || 'Błąd'); }});
-      dec.addEventListener('click', async ()=>{ try{ await api(`/api/proposals/${p.id}/decline`, {method:'POST'}); openProposalsInbox(true); }catch(err){ alert(err?.message || 'Błąd'); }});
-      actions.appendChild(acc); actions.appendChild(dec);
+    
+    if (type === 'in' && p.status === 'pending') {
+      const acc = createEl('button','swap-btn');
+      acc.textContent = 'Akceptuj';
+      const dec = createEl('button','swap-btn');
+      dec.textContent = 'Odrzuć';
+    
+      acc.addEventListener('click', async () => {
+        try {
+          await api(`/api/proposals/${p.id}/accept`, { method: 'POST' });
+          toast.success('✅ Zamiana zaakceptowana');
+          openProposalsInbox(true);
+        } catch (err) {
+          toast.error(err?.message || '❌ Błąd przy akceptacji');
+        }
+      });
+    
+      dec.addEventListener('click', async () => {
+        try {
+          await api(`/api/proposals/${p.id}/decline`, { method: 'POST' });
+          toast.info('ℹ️ Zamiana odrzucona');
+          openProposalsInbox(true);
+        } catch (err) {
+          toast.error(err?.message || '❌ Błąd przy odrzuceniu');
+        }
+      });
+    
+      actions.appendChild(acc);
+      actions.appendChild(dec);
     }
-    if (type === 'out' && p.status === 'pending'){
-      const cancel = createEl('button','swap-btn'); cancel.textContent = 'Anuluj';
-      cancel.addEventListener('click', async ()=>{ try{ await api(`/api/proposals/${p.id}/cancel`, {method:'POST'}); openProposalsInbox(true); }catch(err){ alert(err?.message || 'Błąd'); }});
+    
+    if (type === 'out' && p.status === 'pending') {
+      const cancel = createEl('button','swap-btn');
+      cancel.textContent = 'Anuluj';
+      cancel.addEventListener('click', async () => {
+        try {
+          await api(`/api/proposals/${p.id}/cancel`, { method: 'POST' });
+          toast.info('ℹ️ Propozycja anulowana');
+          openProposalsInbox(true);
+        } catch (err) {
+          toast.error(err?.message || '❌ Błąd przy anulowaniu');
+        }
+      });
       actions.appendChild(cancel);
     }
-
-    row.appendChild(who); row.appendChild(dates); row.appendChild(actions);
+    
+    row.appendChild(who);
+    row.appendChild(dates);
+    row.appendChild(actions);
     return row;
+
   }
 
   async function openProposalsInbox(noBackdropClose){
@@ -794,6 +837,7 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
     }
   });
 })();
+
 
 
 
