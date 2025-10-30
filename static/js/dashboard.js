@@ -382,51 +382,9 @@
           }
         }
       });
+    });
 
-    window.toast = {
-      show(msg, type = 'info', opts = {}) {
-        const wrap = document.querySelector('#toast-wrap') || (() => {
-          const d = document.createElement('div');
-          d.id = 'toast-wrap';
-          d.style.cssText = `
-            position:fixed; bottom:20px; right:20px; display:flex; flex-direction:column;
-            gap:10px; z-index:9999; align-items:flex-end;
-          `;
-          document.body.appendChild(d);
-          return d;
-        })();
-    
-        const div = document.createElement('div');
-        div.className = 'toast';
-        div.style.cssText = `
-          background:${type === 'error' ? '#e74c3c' : type === 'success' ? '#27ae60' : '#444'};
-          color:white; padding:10px 16px; border-radius:8px; font-size:0.9rem;
-          box-shadow:0 2px 8px rgba(0,0,0,.3); opacity:0; transform:translateY(10px);
-          transition:all .3s ease; min-width:240px;
-        `;
-        div.textContent = msg;
-        wrap.appendChild(div);
-    
-        requestAnimationFrame(() => {
-          div.style.opacity = '1';
-          div.style.transform = 'translateY(0)';
-        });
-    
-        setTimeout(() => {
-          div.style.opacity = '0';
-          div.style.transform = 'translateY(10px)';
-          setTimeout(() => div.remove(), 300);
-        }, opts.timeout || 3000);
-      },
-      success(msg, opts) { this.show(msg, 'success', opts); },
-      error(msg, opts) { this.show(msg, 'error', opts); },
-      info(msg, opts) { this.show(msg, 'info', opts); }
-    };
-
-
-
-
-
+  }
 
 
 
@@ -520,7 +478,3 @@
   })();
 
 })();
-
-
-
-
