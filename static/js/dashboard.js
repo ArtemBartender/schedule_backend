@@ -362,28 +362,19 @@
             })
           });
     
-          // Закрываем модалку
           close();
     
-          // 🔔 Красивый тост вместо alert()
-          if (window.toast?.success) {
-            toast.success('✅ Prośba wysłana do właściciela zmiany.', { position: 'bottom-right' });
-          } else {
-            console.log('✅ Prośba wysłana do właściciela zmiany.');
-          }
+          // 💬 Тост вместо alert()
+          toast.success('✅ Prośba wysłana do właściciela zmiany.');
     
-          // лёгкая задержка перед редиректом
+          // Лёгкая задержка перед переходом
           setTimeout(() => window.location.href = '/proposals', 1500);
+    
         } catch (err) {
-          if (window.toast?.error) {
-            toast.error(err.message || 'Błąd przy wysyłaniu');
-          } else {
-            console.error(err.message || 'Błąd');
-          }
+          toast.error(err.message || '❌ Błąd przy wysyłaniu propozycji');
         }
       });
     });
-
   }
 
 
@@ -478,3 +469,4 @@
   })();
 
 })();
+
