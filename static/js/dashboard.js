@@ -260,67 +260,128 @@
     wrap.scrollIntoView({behavior:'smooth', block:'nearest'});
   }
 
+
+
+
+
+
+
+
+
+
+  
   // ========= Модал выбора моей смены =========
-  function openPickMyDateModal({ isoTheir, person }){
+  function openPickMyDateModal({ isoTheir, person }) {
     const tomo = warsawTomorrowUTC();
     const myList = Array
       .from(MY_MAP.values())
       .filter(s => isoToUTCDate(s.shift_date) >= tomo)
       .sort((a,b)=> a.shift_date.localeCompare(b.shift_date));
-
+  
     const allow = (my) => {
-      if (my.shift_date === isoTheir){
+      if (my.shift_date === isoTheir) {
         const gMy = codeGroup(my.shift_code), gTheir = codeGroup(person.shift_code);
         return gMy !== gTheir;
       }
       return true;
     };
-
+  
     const overlay = document.createElement('div');
     overlay.className = 'modal-backdrop';
     overlay.innerHTML = `
-      <div class="modal" style="max-width:900px;">
-        <div class="modal-head">
-          <div class="modal-title">Wybierz swoją zmianę do zamiany → ${esc(person.full_name)} (${isoTheir})</div>
+      <div class="modal" style="max-width:700px; border-radius:12px;">
+        <div class="modal-head" style="padding:12px 16px; border-bottom:1px solid var(--border);">
+          <div class="modal-title" style="font-size:1.1rem; font-weight:600;">
+            🧩 Wybierz swoją zmianę do zamiany <br>
+            <small style="font-weight:400; color:var(--muted);">
+              z <b>${esc(person.full_name)}</b> (${formatDateShort(isoTheir)})
+            </small>
+          </div>
           <button class="modal-close" aria-label="Zamknij">×</button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" style="padding:16px;">
           <div id="my-ladder"></div>
         </div>
       </div>`;
     document.body.appendChild(overlay);
-    const close=()=>overlay.remove();
-    overlay.addEventListener('click', e=>{ if (e.target===overlay || e.target.classList.contains('modal-close')) close(); });
-
+  
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay || e.target.classList.contains('modal-close')) close();
+    });
+  
     const cont = overlay.querySelector('#my-ladder');
-    if (!myList.length){
+    if (!myList.length) {
       cont.innerHTML = '<div class="muted">Brak Twoich zmian od jutra. Nie można proponować wymiany na dziś/wczoraj.</div>';
       return;
     }
-
-    cont.innerHTML = myList.map(s=>{
+  
+    // 🗓️ функция форматирования даты
+    function formatDateShort(iso) {
+      const d = new Date(iso + 'T00:00:00');
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      return `${day}.${month}`;
+    }
+  
+    // 🧱 красивый список смен
+    cont.innerHTML = myList.map(s => {
       const ok = allow(s);
       return `
-        <div class="person-row" style="align-items:center;">
-          <div class="name"><div><b>${s.shift_date}</b> — ${esc(s.shift_code||'')}</div></div>
-          <div class="code">
-            <button class="swap-btn" data-date="${s.shift_date}" ${ok?'':'disabled'}>${ok?'Wybierz':'Niedostępna'}</button>
+        <div class="person-row" style="
+          display:flex; justify-content:space-between; align-items:center;
+          padding:10px 12px; border-bottom:1px solid var(--border);
+          ${ok ? '' : 'opacity:0.5;'}
+        ">
+          <div>
+            <b>${formatDateShort(s.shift_date)}</b>
+            <span class="muted">(${s.shift_code || '—'})</span>
           </div>
+          <button class="swap-btn" data-date="${s.shift_date}" 
+            ${ok ? '' : 'disabled'}
+            style="
+              background:${ok ? 'var(--btn-secondary)' : 'var(--border)'}; 
+              color:${ok ? 'white' : 'gray'};
+              padding:6px 12px; border:none; border-radius:6px; cursor:${ok ? 'pointer' : 'not-allowed'};
+            ">
+            ${ok ? 'Wybierz' : 'Niedostępna'}
+          </button>
         </div>`;
     }).join('');
-
-    cont.querySelectorAll('button[data-date]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
+  
+    cont.querySelectorAll('button[data-date]').forEach(btn => {
+      btn.addEventListener('click', async () => {
         const my_date = btn.getAttribute('data-date');
-        try{
-          await api('/api/proposals', { method:'POST',
-            body: JSON.stringify({ target_user_id: person.user_id, my_date, their_date: isoTheir }) });
-          close(); alert('Propozycja wysłana.'); window.location.href = '/proposals';
-        }catch(err){ alert(err.message || 'Błąd'); }
+        try {
+          await api('/api/proposals', {
+            method: 'POST',
+            body: JSON.stringify({
+              target_user_id: person.user_id,
+              my_date,
+              their_date: isoTheir
+            })
+          });
+          close();
+          alert('Propozycja wysłana.'); 
+          window.location.href = '/proposals';
+        } catch (err) {
+          alert(err.message || 'Błąd');
+        }
       });
     });
   }
 
+
+
+
+
+
+
+
+
+
+
+  
   // ========= Bulk загрузка/рендер месяца =========
   function monthKey(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
   async function fetchMonthBulk(d){
@@ -408,4 +469,5 @@
   })();
 
 })();
+
 
