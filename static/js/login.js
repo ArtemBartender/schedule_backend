@@ -3,7 +3,11 @@
   const openBtn = document.getElementById('forgot-link');
   const closeBtn = document.getElementById('reset-close');
   const sendBtn = document.getElementById('reset-send');
-  const emailInput = document.getElementById('reset-email');
+  const oldPass = document.getElementById('old-pass');
+  const newPass = document.getElementById('new-pass');
+
+  // Zmieniamy tekst linka
+  if (openBtn) openBtn.textContent = 'Zmień hasło';
 
   const api = async (url, opts) => {
     const res = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
@@ -19,14 +23,20 @@
   closeBtn?.addEventListener('click', ()=> modal.classList.add('hidden'));
 
   sendBtn?.addEventListener('click', async ()=>{
-    const email = emailInput.value.trim();
-    if (!email) return alert('Podaj email');
+    const oldP = oldPass.value.trim();
+    const newP = newPass.value.trim();
+    if (!oldP || !newP) return alert('Wpisz oba pola');
     try{
-      await api('/api/password/request', { method:'POST', body: JSON.stringify({email}) });
-      alert('Jeśli email istnieje, wysłano link resetujący.');
+      await api('/api/password/change', {
+        method:'POST',
+        body: JSON.stringify({ stare_haslo: oldP, nowe_haslo: newP })
+      });
+      alert('Hasło zostało zmienione pomyślnie.');
       modal.classList.add('hidden');
+      oldPass.value = '';
+      newPass.value = '';
     }catch(e){
-      alert(e.message || 'Błąd');
+      alert(e.message || 'Błąd podczas zmiany hasła.');
     }
   });
 })();
