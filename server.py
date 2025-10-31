@@ -31,7 +31,8 @@ from sqlalchemy.exc import OperationalError, DisconnectionError
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.orm import sessionmaker
 from flask import current_app
-
+from werkzeug.security import check_password_hash, generate_password_hash
+import sqlite3
 
 # ---------------------------------
 # Config
@@ -795,23 +796,47 @@ def me_settings_set():
         return jsonify({'error': f'Błąd zapisu ustawień: {e}'}), 400
 
 
+#------------------------Zmiana Hasła-----------------------------------
+
+
+def get_db_connection():
+    conn = sqlite3.connect('schedule.db')
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 @app.route('/api/password/change', methods=['POST'])
 def change_password():
-    data = request.json
+    data = request.get_json(silent=True) or {}
+    email = data.get('email', '').strip().lower()
     stare = data.get('stare_haslo')
     nowe = data.get('nowe_haslo')
-    user_email = session.get('user')
 
-    if not user_email:
-        return jsonify({'error': 'Nie jesteś zalogowany'}), 401
+    if not email or not stare or not nowe:
+        return jsonify({'error': 'Brak wymaganych danych'}), 400
 
-    user = db.get_user_by_email(user_email)
-    if not user or not check_password_hash(user.password, stare):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # znajdź użytkownika po emailu
+    cur.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
+    user = cur.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'error': 'Użytkownik nie istnieje'}), 404
+
+    # sprawdź stare hasło
+    stored_hash = user['password_hash']
+    if not check_password_hash(stored_hash, stare):
+        conn.close()
         return jsonify({'error': 'Nieprawidłowe stare hasło'}), 400
 
-    db.update_password(user_email, generate_password_hash(nowe))
+    # ustaw nowe hasło
+    new_hash = generate_password_hash(nowe)
+    cur.execute("UPDATE users SET password_hash = ? WHERE email = ?", (new_hash, email))
+    conn.commit()
+    conn.close()
+
     return jsonify({'status': 'ok'})
 
 
@@ -3172,6 +3197,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
