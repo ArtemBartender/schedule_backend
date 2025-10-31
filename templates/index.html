@@ -28,8 +28,10 @@
         </label>
 
         <div class="row between center" style="margin:6px 0 10px;">
-          <label class="small muted"><input id="remember-me" type="checkbox" /> Zapamiętaj mnie</label>
-          <a class="small muted" href="#" id="forgot-link" title="Wkrótce">Nie pamiętasz hasła?</a>
+          <label class="small muted">
+            <input id="remember-me" type="checkbox" /> Zapamiętaj mnie
+          </label>
+          <a href="#" id="forgot-link" class="muted small">Zmień hasło</a>
         </div>
 
         <button type="submit">Zaloguj</button>
@@ -72,6 +74,120 @@
     </div>
   </div>
 
+  <!-- MODAL: Zmień hasło -->
+  <div id="reset-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Zmień hasło</h3>
+
+      <label for="old-pass">Stare hasło</label>
+      <input type="password" id="old-pass" placeholder="Wpisz stare hasło">
+
+      <label for="new-pass">Nowe hasło</label>
+      <input type="password" id="new-pass" placeholder="Wpisz nowe hasło">
+
+      <div class="modal-buttons" style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
+        <button id="reset-close" class="btn-cancel">Anuluj</button>
+        <button id="reset-send" class="btn-primary">Zapisz</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/js/app.js?v=auth1"></script>
+
+  <script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('reset-modal');
+    const openBtn = document.getElementById('forgot-link');
+    const closeBtn = document.getElementById('reset-close');
+    const sendBtn = document.getElementById('reset-send');
+    const oldPass = document.getElementById('old-pass');
+    const newPass = document.getElementById('new-pass');
+
+    const api = async (url, opts) => {
+      const res = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
+      const body = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(body.error || 'Błąd');
+      return body;
+    };
+
+    openBtn?.addEventListener('click', e => {
+      e.preventDefault();
+      modal.classList.remove('hidden');
+    });
+    closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+
+    sendBtn?.addEventListener('click', async () => {
+      const oldP = oldPass.value.trim();
+      const newP = newPass.value.trim();
+      if (!oldP || !newP) return alert('Wpisz oba pola');
+      try {
+        await api('/api/password/change', {
+          method: 'POST',
+          body: JSON.stringify({ stare_haslo: oldP, nowe_haslo: newP })
+        });
+        alert('Hasło zostało zmienione pomyślnie.');
+        modal.classList.add('hidden');
+        oldPass.value = '';
+        newPass.value = '';
+      } catch (e) {
+        alert(e.message || 'Błąd podczas zmiany hasła.');
+      }
+    });
+  });
+  </script>
+
+  <style>
+    /* Styl modala pasujący do Grafiku Zmian */
+    .modal {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: #1f1f1f;
+      color: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      width: 320px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .btn-cancel {
+      background: transparent;
+      border: 1px solid #888;
+      color: #ccc;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .btn-cancel:hover {
+      border-color: #aaa;
+      color: #fff;
+    }
+
+    .btn-primary {
+      background: linear-gradient(90deg, #58c6ff, #77ffb3);
+      border: none;
+      color: #000;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+    }
+  </style>
 </body>
 </html>
