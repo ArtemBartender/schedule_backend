@@ -1,10 +1,18 @@
-<a href="#" id="forgot-link" class="muted small"></a>
+<a href="#" id="forgot-link" class="muted small">Zmień hasło</a>
 
 <div id="reset-modal" class="modal hidden">
   <div class="modal-content">
-    <h3>Reset hasła</h3>
-    <input type="email" id="reset-email" placeholder="Twój email">
-    <button id="reset-send">Wyślij link</button>
-    <button id="reset-close">Zamknij</button>
+    <h3>Zmień hasło</h3>
+
+    <label for="old-pass">Stare hasło</label>
+    <input type="password" id="old-pass" placeholder="Wpisz stare hasło">
+
+    <label for="new-pass">Nowe hasło</label>
+    <input type="password" id="new-pass" placeholder="Wpisz nowe hasło">
+
+    <div class="modal-buttons">
+      <button id="reset-send">Zapisz</button>
+      <button id="reset-close">Anuluj</button>
+    </div>
   </div>
 </div>
