@@ -16,7 +16,7 @@
       <h2>Logowanie</h2>
       <form id="login-form" autocomplete="on">
         <label>Email
-          <input type="email" name="email" required autocomplete="username" />
+          <input type="email" name="email" id="login-email" required autocomplete="username" />
         </label>
 
         <label>Hasło
@@ -31,7 +31,7 @@
           <label class="small muted">
             <input id="remember-me" type="checkbox" /> Zapamiętaj mnie
           </label>
-          <a href="#" id="forgot-link" class="muted small">Zmień hasło</a>
+          <a href="#" id="change-pass-link" class="muted small">Zmień hasło</a>
         </div>
 
         <button type="submit">Zaloguj</button>
@@ -62,7 +62,9 @@
           <div class="pwd-meter">
             <div id="pwd-bar"></div>
           </div>
-          <div id="pwd-hint" class="small muted">Użyj min. 8 znaków i mieszaj: małe/duże litery, cyfry, symbol.</div>
+          <div id="pwd-hint" class="small muted">
+            Użyj min. 8 znaków i mieszaj: małe/duże litery, cyfry, symbol.
+          </div>
         </label>
 
         <button type="submit">Utwórz konto</button>
@@ -75,7 +77,7 @@
   </div>
 
   <!-- MODAL: Zmień hasło -->
-  <div id="reset-modal" class="modal hidden">
+  <div id="change-pass-modal" class="modal hidden">
     <div class="modal-content">
       <h3>Zmień hasło</h3>
 
@@ -86,8 +88,8 @@
       <input type="password" id="new-pass" placeholder="Wpisz nowe hasło">
 
       <div class="modal-buttons" style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
-        <button id="reset-close" class="btn-cancel">Anuluj</button>
-        <button id="reset-send" class="btn-primary">Zapisz</button>
+        <button id="change-cancel" class="btn-cancel">Anuluj</button>
+        <button id="change-save" class="btn-primary">Zapisz</button>
       </div>
     </div>
   </div>
@@ -96,12 +98,18 @@
 
   <script>
   window.addEventListener('DOMContentLoaded', () => {
-    const modal = document.getElementById('reset-modal');
-    const openBtn = document.getElementById('forgot-link');
-    const closeBtn = document.getElementById('reset-close');
-    const sendBtn = document.getElementById('reset-send');
+    // Убираем старые модалки от app.js (reset password)
+    document.querySelectorAll('.modal-backdrop, .modal').forEach(n => {
+      if (!n.id || n.id !== 'change-pass-modal') n.remove();
+    });
+
+    const modal = document.getElementById('change-pass-modal');
+    const openBtn = document.getElementById('change-pass-link');
+    const closeBtn = document.getElementById('change-cancel');
+    const saveBtn = document.getElementById('change-save');
     const oldPass = document.getElementById('old-pass');
     const newPass = document.getElementById('new-pass');
+    const emailInput = document.getElementById('login-email');
 
     const api = async (url, opts) => {
       const res = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
@@ -114,16 +122,21 @@
       e.preventDefault();
       modal.classList.remove('hidden');
     });
+
     closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
 
-    sendBtn?.addEventListener('click', async () => {
-      const oldP = oldPass.value.trim();
-      const newP = newPass.value.trim();
-      if (!oldP || !newP) return alert('Wpisz oba pola');
+    saveBtn?.addEventListener('click', async () => {
+      const email = (emailInput?.value || '').trim();
+      const stare = oldPass.value.trim();
+      const nowe = newPass.value.trim();
+
+      if (!email) return alert('Podaj email (w polu logowania).');
+      if (!stare || !nowe) return alert('Wpisz stare i nowe hasło.');
+
       try {
         await api('/api/password/change', {
           method: 'POST',
-          body: JSON.stringify({ stare_haslo: oldP, nowe_haslo: newP })
+          body: JSON.stringify({ email, stare_haslo: stare, nowe_haslo: nowe })
         });
         alert('Hasło zostało zmienione pomyślnie.');
         modal.classList.add('hidden');
@@ -137,7 +150,6 @@
   </script>
 
   <style>
-    /* Styl modala pasujący do Grafiku Zmian */
     .modal {
       position: fixed;
       inset: 0;
