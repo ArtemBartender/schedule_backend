@@ -795,6 +795,28 @@ def me_settings_set():
         return jsonify({'error': f'Błąd zapisu ustawień: {e}'}), 400
 
 
+
+
+@app.route('/api/password/change', methods=['POST'])
+def change_password():
+    data = request.json
+    stare = data.get('stare_haslo')
+    nowe = data.get('nowe_haslo')
+    user_email = session.get('user')
+
+    if not user_email:
+        return jsonify({'error': 'Nie jesteś zalogowany'}), 401
+
+    user = db.get_user_by_email(user_email)
+    if not user or not check_password_hash(user.password, stare):
+        return jsonify({'error': 'Nieprawidłowe stare hasło'}), 400
+
+    db.update_password(user_email, generate_password_hash(nowe))
+    return jsonify({'status': 'ok'})
+
+
+
+
 @app.post('/api/control/late')
 @jwt_required()
 def control_add_late():
@@ -3150,6 +3172,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
