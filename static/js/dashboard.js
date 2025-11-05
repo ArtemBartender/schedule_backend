@@ -79,28 +79,31 @@
     el.title = person?.full_name || '';
   
     // --- бейджи/признаки
-    // bar?
     const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
     const isBar = person?.is_bar_today ?? looksBar;
-  
-    // змывак?
     const isZ = !!person?.is_zmiwaka;
-  
-    // координатор на ЭТУ смену?
     const coordLounge = (person?.coord_lounge || '').toLowerCase();
-  
-    // lounge от цифры (если когда-либо начнём его отдавать)
     const lounge = (person?.lounge || '').toLowerCase();
   
     // --- рамка-приоритеты:
     // 1) змывак -> серый
-    // 2) бармен -> жёлтый (полонез)
-    // 3) иначе: по lounge (если есть)
+    // 2) бармен -> жёлтый (Polonez)
+    // 3) иначе по lounge
     let frame = '';
     if (isZ) frame = 'zmywak';
     else if (isBar) frame = 'polonez';
     else if (lounge === 'mazurek' || lounge === 'polonez') frame = lounge;
     styleAccent(el, frame);
+  
+    // 💙 / 💛 рамка для координаторов
+    if (person?.coord_lounge) {
+      if (coordLounge === 'mazurek') {
+        el.style.boxShadow = 'inset 0 0 0 2px rgba(42,110,245,.45)';   // синяя
+      } 
+      else if (coordLounge === 'polonez') {
+        el.style.boxShadow = 'inset 0 0 0 2px rgba(255,214,74,.55)';   // жёлтая
+      }
+    }
   
     // имя
     const nm = document.createElement('span');
@@ -109,22 +112,25 @@
     el.appendChild(nm);
   
     // бейджи
-    if (isBar) el.appendChild(badge('bar','badge-bar'));
+    if (isBar) el.appendChild(badge('bar', 'badge-bar'));
   
-    if (person?.coord_lounge){
-      const k = badge('koord.','badge-coord');
+    if (person?.coord_lounge) {
+      const k = badge('koord.', 'badge-coord');
       if (coordLounge === 'mazurek') k.classList.add('lounge-mazurek');
       else if (coordLounge === 'polonez') k.classList.add('lounge-polonez');
       el.appendChild(k);
     }
   
-    if (isZ){
-      el.appendChild(badge('zmywak','badge-zmiwak'));
+    if (isZ) {
+      el.appendChild(badge('zmywak', 'badge-zmiwak'));
     }
   
-    // код (1/2, скрываем /B в бейдже)
-    const codeText = String(person?.shift_code || '').replace(/\s+/g,'').replace('/B','').replace('B','');
-    if (codeText){
+    // код смены (1/2 без /B)
+    const codeText = String(person?.shift_code || '')
+      .replace(/\s+/g, '')
+      .replace('/B', '')
+      .replace('B', '');
+    if (codeText) {
       const c = document.createElement('span');
       c.className = 'badge badge-shift';
       c.textContent = codeText;
@@ -132,7 +138,11 @@
     }
   
     // клик — панель действий
-    el.addEventListener('click', (e) => { e.stopPropagation(); showActionsUnderDay(isoDate, person); });
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showActionsUnderDay(isoDate, person);
+    });
+  
     return el;
   }
 
@@ -503,6 +513,7 @@
   })();
 
 })();
+
 
 
 
