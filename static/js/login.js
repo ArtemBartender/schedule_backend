@@ -7,6 +7,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const oldPass = document.getElementById('old-pass');
     const newPass = document.getElementById('new-pass');
     const newPass2 = document.getElementById('new-pass2'); // подтверждение
+    const emailInput = document.getElementById('login-email'); // если есть поле email на странице логина
 
     // Меняем текст линка, если надо
     if (openBtn) openBtn.textContent = 'Zmień hasło';
@@ -37,6 +38,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const oldP = oldPass.value.trim();
       const newP = newPass.value.trim();
       const newP2 = newPass2 ? newPass2.value.trim() : newP;
+      const email = emailInput?.value?.trim().toLowerCase() || null;
 
       if (!oldP || !newP)
         return alert('Wpisz oba pola hasła.');
@@ -46,12 +48,18 @@ window.addEventListener('DOMContentLoaded', () => {
         return alert('Nowe hasła nie są identyczne.');
 
       try {
-        await api('/api/password/change', {
+        let endpoint = '/api/password/change'; // по умолчанию — вариант для залогиненного
+        let body = { stare_haslo: oldP, nowe_haslo: newP };
+
+        // если есть поле email (то есть это экран логина, без JWT)
+        if (email) {
+          endpoint = '/api/password/change-before-login';
+          body.email = email;
+        }
+
+        await api(endpoint, {
           method: 'POST',
-          body: JSON.stringify({
-            stare_haslo: oldP,
-            nowe_haslo: newP
-          })
+          body: JSON.stringify(body)
         });
 
         // 🎉 успех
