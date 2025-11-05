@@ -223,50 +223,6 @@ async function api(path, opts = {}) {
       }
     });
 
-    // «Забыли пароль?» — ТЕПЕРЬ РАБОТАЕТ
-    $('#forgot-link')?.addEventListener('click', async (e)=>{
-      e.preventDefault();
-
-      // простой диалог
-      const overlay = document.createElement('div'); overlay.className = 'modal-backdrop';
-      overlay.innerHTML = `
-        <div class="modal" style="max-width:420px;">
-          <div class="modal-head">
-            <div class="modal-title">Reset hasła</div>
-            <button class="modal-close" aria-label="Zamknij">×</button>
-          </div>
-          <div class="modal-body">
-            <p>Podaj email związany z kontem. Wyślemy link resetujący (log w konsoli serwera).</p>
-            <input type="email" id="reset-email" placeholder="email@domena" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);" />
-            <div id="reset-msg" class="form-msg" style="margin-top:8px;"></div>
-            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
-              <button class="btn-secondary modal-close">Anuluj</button>
-              <button class="btn-secondary" id="reset-send">Wyślij link</button>
-            </div>
-          </div>
-        </div>`;
-      document.body.appendChild(overlay);
-      const close = ()=> overlay.remove();
-      overlay.addEventListener('click', ev => {
-        if (ev.target === overlay || ev.target.classList.contains('modal-close')) close();
-      });
-
-      const msg = overlay.querySelector('#reset-msg');
-      overlay.querySelector('#reset-send').addEventListener('click', async ()=>{
-        msg.textContent=''; msg.className='form-msg';
-        const email = String(overlay.querySelector('#reset-email').value||'').trim().toLowerCase();
-        if (!email){ msg.textContent='Podaj email.'; msg.classList.add('error'); return; }
-        try{
-          await apiAuth('/api/password/request', { email });
-          msg.textContent='Jeśli email istnieje — wysłaliśmy link. Sprawdź pocztę (lub link w logach).';
-          msg.classList.add('ok');
-        }catch(err){
-          msg.textContent = err.message || 'Błąd';
-          msg.classList.add('error');
-        }
-      });
-    });
-  })();
 
 
   // ===== Zmiana hasła przed zalogowaniem =====
@@ -921,6 +877,7 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
     }
   });
 })();
+
 
 
 
