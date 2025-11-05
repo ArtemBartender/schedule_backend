@@ -268,6 +268,90 @@ async function api(path, opts = {}) {
     });
   })();
 
+
+  // ===== Zmiana hasła przed zalogowaniem =====
+  (function initPasswordChangeBeforeLogin() {
+    const link = document.getElementById('forgot-link');
+    if (!link) return;
+  
+    link.textContent = 'Zmień hasło';
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+  
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-backdrop';
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:420px;">
+          <div class="modal-head">
+            <div class="modal-title">Zmień hasło</div>
+            <button class="modal-close" aria-label="Zamknij">×</button>
+          </div>
+          <div class="modal-body">
+            <input type="email" id="change-email" placeholder="Email" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);margin-bottom:10px;" />
+            <input type="password" id="old-pass" placeholder="Stare hasło" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);margin-bottom:10px;" />
+            <input type="password" id="new-pass" placeholder="Nowe hasło" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);" />
+            <div id="change-msg" class="form-msg" style="margin-top:8px;"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+              <button class="btn-secondary modal-close">Anuluj</button>
+              <button class="btn-primary" id="change-send">Zapisz</button>
+            </div>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+  
+      const close = () => overlay.remove();
+      overlay.addEventListener('click', ev => {
+        if (ev.target === overlay || ev.target.classList.contains('modal-close')) close();
+      });
+  
+      const emailInput = overlay.querySelector('#change-email');
+      const oldInput = overlay.querySelector('#old-pass');
+      const newInput = overlay.querySelector('#new-pass');
+      const msg = overlay.querySelector('#change-msg');
+  
+      overlay.querySelector('#change-send').addEventListener('click', async () => {
+        msg.textContent = '';
+        msg.className = 'form-msg';
+        const email = emailInput.value.trim().toLowerCase();
+        const oldP = oldInput.value.trim();
+        const newP = newInput.value.trim();
+        if (!email || !oldP || !newP) {
+          msg.textContent = 'Wpisz wszystkie pola.';
+          msg.classList.add('error');
+          return;
+        }
+        if (newP.length < 6) {
+          msg.textContent = 'Nowe hasło musi mieć ≥ 6 znaków.';
+          msg.classList.add('error');
+          return;
+        }
+  
+        try {
+          const res = await fetch('/api/password/change-before-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: email,
+              stare_haslo: oldP,
+              nowe_haslo: newP
+            })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Błąd');
+  
+          msg.textContent = '✅ Hasło zostało zmienione. Możesz się zalogować.';
+          msg.classList.add('ok');
+          setTimeout(close, 1200);
+        } catch (err) {
+          msg.textContent = err.message || '❌ Błąd zmiany hasła.';
+          msg.classList.add('error');
+        }
+      });
+    });
+  })();
+
+
+  
   // ====== MENU ======
   function initMenu(){
     const toggle = document.getElementById('menu-toggle');
@@ -837,6 +921,7 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
     }
   });
 })();
+
 
 
 
