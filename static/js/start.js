@@ -40,7 +40,7 @@
   }
   const iso = todayISO_Warsaw();
 
-  // заголовок «Dziś, czwartek 09.10»
+  // заголовок «Dziś, środa 05.11»
   (function setTodayHeader(){
     try{
       const d = new Date(iso+'T12:00:00Z');
@@ -75,13 +75,12 @@
     workTitle: $('#mates-title')       || $('#work-title')
   };
 
-  // человеко-пилюля: ОРЕОЛ по lounge, bar → Polonez (жёлтый), zmywak → серый контур,
-  // бейдж координатора — цвет по coord_lounge
+  // человеко-пилюля
   function styleAccentByLounge(el, lounge){
     if (!lounge) return;
     const l = String(lounge).toLowerCase();
-    if (l === 'mazurek')      el.classList.add('chip-mazurek');   // синий ореол
-    else if (l === 'polonez') el.classList.add('chip-polonez');   // жёлтый ореол
+    if (l === 'mazurek')      el.classList.add('chip-mazurek');
+    else if (l === 'polonez') el.classList.add('chip-polonez');
   }
   function badge(text, cls){
     const b = document.createElement('span');
@@ -91,41 +90,32 @@
   }
   function chip(person){
     const el = document.createElement('span');
-    el.className = 'person-chip';   // стили такие же, как в календаре
+    el.className = 'person-chip';
     el.title = person?.full_name || '';
 
-    // bar?
     const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
     const isBar    = person?.is_bar_today ?? looksBar;
-
-    // lounge-акцент: бармен всегда Polonez (жёлтый), иначе по lounge
     const lounge = (isBar ? 'polonez' : (person?.lounge || '')).toLowerCase();
     styleAccentByLounge(el, lounge);
 
-    // имя
     const nm = document.createElement('span');
     nm.className = 'name';
     nm.textContent = person?.full_name || '';
     el.appendChild(nm);
 
-    // бейджи
     if (isBar) el.appendChild(badge('bar','badge-bar'));
-
     if (person?.is_coordinator){
       const k = badge('koord.','badge-coord');
       const cl = (person?.coord_lounge || lounge || '').toLowerCase();
-      if (cl === 'mazurek') { k.classList.add('lounge-mazurek'); }
-      else if (cl === 'polonez') { k.classList.add('lounge-polonez'); }
+      if (cl === 'mazurek') k.classList.add('lounge-mazurek');
+      else if (cl === 'polonez') k.classList.add('lounge-polonez');
       el.appendChild(k);
     }
-
     if (person?.is_zmiwaka){
       el.appendChild(badge('zmywak','badge-zmywak'));
-      // серый контур поверх
       el.classList.add('chip-zmywak-ring');
     }
 
-    // код смены (покажем как есть: 1 / 2 / 1/B / 2/B)
     const codeText = String(person?.shift_code || '').trim();
     if (codeText){
       const c = document.createElement('span');
@@ -133,11 +123,10 @@
       c.textContent = codeText;
       el.appendChild(c);
     }
-
     return el;
   }
 
-  // нотации времени
+  // формат времени
   function timePL(isoStr){
     let s = String(isoStr || '');
     if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) s = s.replace(' ', 'T');
@@ -195,7 +184,7 @@
     }
   }
 
-  // ======= Dziś w pracy: вкладки Rano/Popo =======
+  // ======= Dziś w pracy =======
   let dayCache = { morning:[], evening:[] };
   function renderWork(group){
     const box = els.workBox; if (!box) return;
@@ -225,13 +214,34 @@
     list.className = 'sg-list';
     box.appendChild(list);
 
+    // сортировка по приоритетам
+    const sortWeight = (p) => {
+      const isCoord = !!p.is_coordinator;
+      const lounge = (p.coord_lounge || p.lounge || '').toLowerCase();
+      const isBar = /(^|[\/\s])B($|[\/\s])/i.test(String(p.shift_code || '')) || p.is_bar_today;
+      const isZ = !!p.is_zmiwaka;
+
+      if (isZ) return 999;
+      if (isCoord && lounge === 'polonez') return 1;
+      if (isBar) return 2;
+      if (lounge === 'polonez') return 3;
+      if (isCoord && lounge === 'mazurek') return 4;
+      if (lounge === 'mazurek') return 5;
+      return 6;
+    };
+
     function setActive(which){
       btnM.classList.toggle('active', which==='morning');
       btnE.classList.toggle('active', which==='evening');
       list.innerHTML = '';
-      (which==='morning' ? (dayCache.morning||[]) : (dayCache.evening||[]))
-        .forEach(p => list.appendChild(chip(p)));
+
+      const arr = (which==='morning' ? (dayCache.morning||[]) : (dayCache.evening||[]))
+        .slice()
+        .sort((a,b)=> sortWeight(a)-sortWeight(b));
+
+      arr.forEach(p => list.appendChild(chip(p)));
     }
+
     btnM.addEventListener('click', ()=> setActive('morning'));
     btnE.addEventListener('click', ()=> setActive('evening'));
     setActive(group || 'morning');
@@ -243,7 +253,6 @@
       const day = await api('/api/day-shifts?date='+iso);
       dayCache = { morning: day.morning||[], evening: day.evening||[] };
 
-      // моя смена
       let my=null, group=null;
       const m = dayCache.morning.find(p=>p.full_name===myName);
       const e = dayCache.evening.find(p=>p.full_name===myName);
@@ -256,8 +265,9 @@
           : `Dziś masz wolne.`;
       }
 
+      // сначала работа
       renderWork(group || 'morning');
-
+      // потом заметки
       const notes = await api('/api/day-notes?date='+iso);
       renderNotes(notes);
 
@@ -277,7 +287,6 @@
     }
   }
 
-  // добавление заметки
   async function addNote(){
     const ta = $('#note-input');
     const txt = (ta && ta.value || '').trim();
@@ -300,10 +309,8 @@
     autosize();
   })();
 
-  // кнопки
   $('#note-add')?.addEventListener('click', addNote);
   $('#btn-refresh')?.addEventListener('click', loadToday);
 
-  // init
   loadToday();
 })();
