@@ -136,11 +136,20 @@
     return el;
   }
 
+
+
+
+
+
+
+
+
+  
   // ========= Колонки =========
   function colBlock(label, people, isoDate, group) {
     const wrap = document.createElement('div');
     wrap.className = `day-col shift-group group--${group}`;
-
+  
     const head = document.createElement('div');
     head.className = 'group-head';
     head.innerHTML = `
@@ -148,7 +157,25 @@
       <span class="group-count">${people.length}</span>
     `;
     wrap.appendChild(head);
-
+  
+    // 🔽 вот здесь добавляем сортировку
+    const sortWeight = (p) => {
+      const isCoord = !!p.coord_lounge;
+      const lounge = (p.coord_lounge || p.lounge || '').toLowerCase();
+      const isBar = /(^|[\/\s])B($|[\/\s])/i.test(String(p.shift_code || '')) || p.is_bar_today;
+      const isZ = !!p.is_zmiwaka;
+  
+      if (isCoord && lounge === 'polonez') return 1;   // коорд. полонез
+      if (isBar) return 2;                             // бармен
+      if (lounge === 'polonez') return 3;              // официант полонез
+      if (isCoord && lounge === 'mazurek') return 4;   // коорд. мазурек
+      if (lounge === 'mazurek') return 5;              // официант мазурек
+      if (isZ) return 6;                               // змывак
+      return 7;                                        // всё остальное
+    };
+  
+    people.sort((a, b) => sortWeight(a) - sortWeight(b));
+  
     if (!people.length) {
       const empty = document.createElement('div');
       empty.className = 'muted';
@@ -163,6 +190,12 @@
     return wrap;
   }
 
+
+
+
+
+
+  
   // ========= День =========
   function dayRow(iso, data, isToday) {
     const d = new Date(iso + 'T12:00:00');
@@ -469,4 +502,5 @@
   })();
 
 })();
+
 
