@@ -92,30 +92,46 @@
     const el = document.createElement('span');
     el.className = 'person-chip';
     el.title = person?.full_name || '';
-
+  
+    // определяем роли
     const looksBar = /(^|[\/\s])B($|[\/\s])/i.test(String(person?.shift_code || ''));
     const isBar    = person?.is_bar_today ?? looksBar;
     const lounge = (isBar ? 'polonez' : (person?.lounge || '')).toLowerCase();
     styleAccentByLounge(el, lounge);
-
+  
+    // имя
     const nm = document.createElement('span');
     nm.className = 'name';
     nm.textContent = person?.full_name || '';
     el.appendChild(nm);
-
+  
+    // бармен
     if (isBar) el.appendChild(badge('bar','badge-bar'));
+  
+    // координатор
     if (person?.is_coordinator){
       const k = badge('koord.','badge-coord');
       const cl = (person?.coord_lounge || lounge || '').toLowerCase();
-      if (cl === 'mazurek') k.classList.add('lounge-mazurek');
-      else if (cl === 'polonez') k.classList.add('lounge-polonez');
+  
+      if (cl === 'mazurek') {
+        k.classList.add('lounge-mazurek');
+        el.style.boxShadow = 'inset 0 0 0 2px rgba(42,110,245,.45)'; // 💙 синяя рамка
+      } 
+      else if (cl === 'polonez') {
+        k.classList.add('lounge-polonez');
+        el.style.boxShadow = 'inset 0 0 0 2px rgba(255,214,74,.55)'; // 💛 жёлтая рамка
+      }
+  
       el.appendChild(k);
     }
+  
+    // змывак
     if (person?.is_zmiwaka){
       el.appendChild(badge('zmywak','badge-zmywak'));
       el.classList.add('chip-zmywak-ring');
     }
-
+  
+    // код смены
     const codeText = String(person?.shift_code || '').trim();
     if (codeText){
       const c = document.createElement('span');
@@ -123,6 +139,7 @@
       c.textContent = codeText;
       el.appendChild(c);
     }
+  
     return el;
   }
 
@@ -314,3 +331,4 @@
 
   loadToday();
 })();
+
