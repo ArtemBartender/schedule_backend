@@ -1637,6 +1637,71 @@ def password_reset():
     return jsonify({"ok": True, "msg": "Password updated"})
 
 
+
+
+
+
+
+# ========== 3. Изменение пароля изнутри ==========
+from werkzeug.security import check_password_hash
+
+@app.post("/api/password/change")
+@jwt_required()
+def password_change():
+    data = request.get_json() or {}
+    old_pw = data.get("stare_haslo")
+    new_pw = data.get("nowe_haslo")
+
+    if not old_pw or not new_pw:
+        return jsonify({"error": "Brak danych"}), 400
+
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "Użytkownik nie znaleziony"}), 404
+
+    # проверяем старый пароль
+    if not bcrypt.check_password_hash(user.password_hash, old_pw):
+        return jsonify({"error": "Nieprawidłowe stare hasło"}), 400
+
+    # генерируем новый hash
+    user.password_hash = bcrypt.generate_password_hash(new_pw).decode("utf-8")
+    db.session.commit()
+
+    return jsonify({"ok": True, "msg": "Hasło zostało zmienione pomyślnie"})
+
+
+# ========== 4. Изменение пароля без JWT (на странице логина) ==========
+@app.post("/api/password/change-before-login")
+def password_change_before_login():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    old_pw = data.get("stare_haslo")
+    new_pw = data.get("nowe_haslo")
+
+    if not email or not old_pw or not new_pw:
+        return jsonify({"error": "Brak danych"}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": "Nieprawidłowy email lub hasło"}), 401
+
+    # Проверяем старый пароль
+    if not bcrypt.check_password_hash(user.password_hash, old_pw):
+        return jsonify({"error": "Nieprawidłowy email lub hasło"}), 401
+
+    # Меняем на новый
+    user.password_hash = bcrypt.generate_password_hash(new_pw).decode("utf-8")
+    db.session.commit()
+
+    return jsonify({"ok": True, "msg": "Hasło zostało zmienione pomyślnie"})
+
+
+
+
+
+
+
 # ---------------------------------
 # Proposals (swap requests) — двухэтапное утверждение
 # ---------------------------------
@@ -3197,6 +3262,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
