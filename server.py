@@ -799,7 +799,7 @@ def me_settings_set():
 #------------------------Zmiana Hasła-----------------------------------
 # ========== Смена пароля до входа (на странице логина) ==========
 
-from app import app, db
+from server import app, db
 from models import User
 from flask_bcrypt import Bcrypt
 
@@ -3156,36 +3156,5 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
