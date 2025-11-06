@@ -783,7 +783,7 @@ async function api(path, opts = {}) {
 })();
 
 
-// ---- Time helpers (Europe/Warsaw) ----
+// ---- Time helpers (Europe/Warsaw) ----  
 function warsawToday() {
   const s = new Date().toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' });
   const [d, m, y] = s.split(',')[0].split('.').map(x => parseInt(x, 10));
@@ -813,71 +813,91 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') ping();
   });
-
+})();
 
   
 // ===== Password Reset page support =====
-(function initPasswordReset(){
-  // работает на любой странице, но активируется только на /reset?token=...
-  const url = new URL(window.location.href);
-  if (url.pathname !== '/reset') return;
+(function initPasswordChangeBeforeLogin() {
+  const link = document.getElementById('forgot-link');
+  if (!link) return;
 
-  const token = url.searchParams.get('token') || '';
-
-  // если на странице уже есть собственная форма — цепляемся к ней
-  let form = document.getElementById('reset-form');
-  let msg  = document.getElementById('reset-msg');
-  let pass1= document.getElementById('new-pass');
-  let pass2= document.getElementById('new-pass2');
-
-  // если формы нет — создадим простую встроенную
-  if (!form){
-    const box = document.createElement('div');
-    box.style.cssText = 'max-width:420px;margin:40px auto;padding:16px;border:1px solid var(--border,#333);border-radius:12px;';
-    box.innerHTML = `
-      <h2 style="margin-top:0">Reset hasła</h2>
-      <form id="reset-form">
-        <input id="new-pass" type="password" placeholder="Nowe hasło" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border,#333);margin-bottom:8px;">
-        <input id="new-pass2" type="password" placeholder="Powtórz hasło" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border,#333);margin-bottom:8px;">
-        <button class="btn-secondary" type="submit">Zapisz</button>
-        <div id="reset-msg" class="form-msg" style="margin-top:10px;"></div>
-      </form>
-    `;
-    document.body.appendChild(box);
-    form = box.querySelector('#reset-form');
-    pass1 = box.querySelector('#new-pass');
-    pass2 = box.querySelector('#new-pass2');
-    msg   = box.querySelector('#reset-msg');
-  }
-
-  form.addEventListener('submit', async (e)=>{
+  link.textContent = 'Zmień hasło';
+  link.addEventListener('click', (e) => {
     e.preventDefault();
-    msg.textContent=''; msg.className='form-msg';
-    const p1 = String(pass1.value||'');
-    const p2 = String(pass2.value||'');
-    if (!token){ msg.textContent='Brak tokenu w linku.'; msg.classList.add('error'); return; }
-    if (!p1 || p1.length < 8){ msg.textContent='Hasło musi mieć ≥ 8 znaków.'; msg.classList.add('error'); return; }
-    if (p1 !== p2){ msg.textContent='Hasła nie są takie same.'; msg.classList.add('error'); return; }
 
-    try{
-      await fetch('/api/password/reset', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ token, new_password: p1 })
-      }).then(async r=>{
-        const data = await r.json().catch(()=> ({}));
-        if (!r.ok) throw new Error(data.error || ('HTTP '+r.status));
-        return data;
-      });
-      msg.textContent='Hasło zmienione. Zaloguj się nowym hasłem.';
-      msg.classList.add('ok');
-      setTimeout(()=>{ window.location.href = '/'; }, 900);
-    }catch(err){
-      msg.textContent = err.message || 'Błąd resetu';
-      msg.classList.add('error');
-    }
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-backdrop';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-head">
+          <div class="modal-title">Zmień hasło</div>
+          <button class="modal-close" aria-label="Zamknij">×</button>
+        </div>
+        <div class="modal-body">
+          <input type="email" id="change-email" placeholder="Email" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);margin-bottom:10px;" />
+          <input type="password" id="old-pass" placeholder="Stare hasło" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);margin-bottom:10px;" />
+          <input type="password" id="new-pass" placeholder="Nowe hasło" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);" />
+          <div id="change-msg" class="form-msg" style="margin-top:8px;"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+            <button class="btn-secondary modal-close">Anuluj</button>
+            <button class="btn-primary" id="change-send">Zapisz</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', ev => {
+      if (ev.target === overlay || ev.target.classList.contains('modal-close')) close();
+    });
+
+    const emailInput = overlay.querySelector('#change-email');
+    const oldInput = overlay.querySelector('#old-pass');
+    const newInput = overlay.querySelector('#new-pass');
+    const msg = overlay.querySelector('#change-msg');
+
+    overlay.querySelector('#change-send').addEventListener('click', async () => {
+      msg.textContent = '';
+      msg.className = 'form-msg';
+      const email = emailInput.value.trim().toLowerCase();
+      const oldP = oldInput.value.trim();
+      const newP = newInput.value.trim();
+      if (!email || !oldP || !newP) {
+        msg.textContent = 'Wpisz wszystkie pola.';
+        msg.classList.add('error');
+        return;
+      }
+      if (newP.length < 6) {
+        msg.textContent = 'Nowe hasło musi mieć ≥ 6 znaków.';
+        msg.classList.add('error');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/password/change-before-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email,
+            stare_haslo: oldP,
+            nowe_haslo: newP
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Błąd');
+
+        msg.textContent = '✅ Hasło zostało zmienione. Możesz się zalogować.';
+        msg.classList.add('ok');
+        setTimeout(close, 1200);
+      } catch (err) {
+        msg.textContent = err.message || '❌ Błąd zmiany hasła.';
+        msg.classList.add('error');
+      }
+    });
   });
 })();
+
+
 
 
 
