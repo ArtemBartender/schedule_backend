@@ -797,47 +797,48 @@ def me_settings_set():
 
 
 #------------------------Zmiana Hasła-----------------------------------
+# ========== Смена пароля до входа (на странице логина) ==========
 
+from app import app, db
+from models import User
+from flask_bcrypt import Bcrypt
 
-def get_db_connection():
-    conn = sqlite3.connect('schedule.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+bcrypt = Bcrypt(app)
 
-
-@app.route('/api/password/change', methods=['POST'])
-def change_password():
+@app.post("/api/password/change-before-login")
+def password_change_before_login():
+    """
+    Позволяет пользователю сменить пароль, если он помнит старый,
+    но еще не залогинился (через email + старое + новое).
+    """
     data = request.get_json(silent=True) or {}
-    email = data.get('email', '').strip().lower()
-    stare = data.get('stare_haslo')
-    nowe = data.get('nowe_haslo')
+    email = (data.get("email") or "").strip().lower()
+    old_pw = data.get("stare_haslo")
+    new_pw = data.get("nowe_haslo")
 
-    if not email or not stare or not nowe:
-        return jsonify({'error': 'Brak wymaganych danych'}), 400
+    # Проверяем заполненность
+    if not email or not old_pw or not new_pw:
+        return jsonify({"error": "Brak danych"}), 400
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    # znajdź użytkownika po emailu
-    cur.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
-    user = cur.fetchone()
+    # Находим пользователя
+    user = User.query.filter_by(email=email).first()
     if not user:
-        conn.close()
-        return jsonify({'error': 'Użytkownik nie istnieje'}), 404
+        return jsonify({"error": "Nieprawidłowy email lub hasło"}), 401
 
-    # sprawdź stare hasło
-    stored_hash = user['password_hash']
-    if not check_password_hash(stored_hash, stare):
-        conn.close()
-        return jsonify({'error': 'Nieprawidłowe stare hasło'}), 400
+    # Проверяем старый пароль
+    if not bcrypt.check_password_hash(user.password_hash, old_pw):
+        return jsonify({"error": "Nieprawidłowy email lub hasło"}), 401
 
-    # ustaw nowe hasło
-    new_hash = generate_password_hash(nowe)
-    cur.execute("UPDATE users SET password_hash = ? WHERE email = ?", (new_hash, email))
-    conn.commit()
-    conn.close()
+    # Проверяем длину нового пароля
+    if len(new_pw) < 6:
+        return jsonify({"error": "Nowe hasło musi mieć co najmniej 6 znaków"}), 400
 
-    return jsonify({'status': 'ok'})
+    # Сохраняем новый пароль
+    user.password_hash = bcrypt.generate_password_hash(new_pw).decode("utf-8")
+    db.session.commit()
+
+    return jsonify({"ok": True, "msg": "Hasło zostało zmienione pomyślnie"})
+
 
 
 
@@ -1593,113 +1594,6 @@ def my_notes_month():
             .order_by(Shift.shift_date.asc())
             .all())
     return jsonify([{'date': s.shift_date.isoformat(), 'note': s.work_note} for s in rows])
-
-
-# ========== 1. Запрос на сброс ==========
-@app.post("/api/password/request")
-def password_request():
-    data = request.get_json() or {}
-    email = (data.get("email") or "").strip().lower()
-
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"ok": True})  # не раскрываем, что email не существует
-
-    user.reset_token = secrets.token_urlsafe(32)
-    user.reset_expires = datetime.utcnow() + timedelta(minutes=30)
-    db.session.commit()
-
-    reset_url = f"https://lot-schedule-api.onrender.com/reset?token={user.reset_token}"
-    print("=== RESET LINK ===")
-    print(reset_url)
-    # Тут можно подключить почту, но пока просто лог в консоль
-
-    return jsonify({"ok": True, "msg": "Reset link sent"})
-
-# ========== 2. Сброс пароля ==========
-@app.post("/api/password/reset")
-def password_reset():
-    data = request.get_json() or {}
-    token = data.get("token")
-    new_pw = data.get("new_password")
-
-    if not token or not new_pw:
-        return jsonify({"error": "Missing token or password"}), 400
-
-    user = User.query.filter_by(reset_token=token).first()
-    if not user or not user.reset_expires or user.reset_expires < datetime.utcnow():
-        return jsonify({"error": "Invalid or expired token"}), 400
-
-    user.password_hash = bcrypt.generate_password_hash(new_pw).decode("utf-8")
-    user.reset_token = None
-    user.reset_expires = None
-    db.session.commit()
-    return jsonify({"ok": True, "msg": "Password updated"})
-
-
-
-
-
-
-
-# ========== 3. Изменение пароля изнутри ==========
-from werkzeug.security import check_password_hash
-
-@app.post("/api/password/change")
-@jwt_required()
-def password_change():
-    data = request.get_json() or {}
-    old_pw = data.get("stare_haslo")
-    new_pw = data.get("nowe_haslo")
-
-    if not old_pw or not new_pw:
-        return jsonify({"error": "Brak danych"}), 400
-
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "Użytkownik nie znaleziony"}), 404
-
-    # проверяем старый пароль
-    if not bcrypt.check_password_hash(user.password_hash, old_pw):
-        return jsonify({"error": "Nieprawidłowe stare hasło"}), 400
-
-    # генерируем новый hash
-    user.password_hash = bcrypt.generate_password_hash(new_pw).decode("utf-8")
-    db.session.commit()
-
-    return jsonify({"ok": True, "msg": "Hasło zostało zmienione pomyślnie"})
-
-
-# ========== 4. Изменение пароля без JWT (на странице логина) ==========
-@app.post("/api/password/change-before-login")
-def password_change_before_login():
-    data = request.get_json() or {}
-    email = (data.get("email") or "").strip().lower()
-    old_pw = data.get("stare_haslo")
-    new_pw = data.get("nowe_haslo")
-
-    if not email or not old_pw or not new_pw:
-        return jsonify({"error": "Brak danych"}), 400
-
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "Nieprawidłowy email lub hasło"}), 401
-
-    # Проверяем старый пароль
-    if not bcrypt.check_password_hash(user.password_hash, old_pw):
-        return jsonify({"error": "Nieprawidłowy email lub hasło"}), 401
-
-    # Меняем на новый
-    user.password_hash = bcrypt.generate_password_hash(new_pw).decode("utf-8")
-    db.session.commit()
-
-    return jsonify({"ok": True, "msg": "Hasło zostało zmienione pomyślnie"})
-
-
-
-
-
 
 
 # ---------------------------------
@@ -3262,6 +3156,7 @@ if __name__ == '__main__':
         ensure_coord_lounge_column()
         ensure_lounge_column()   # ← ВАЖНО
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
 
 
 
