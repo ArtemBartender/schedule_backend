@@ -813,8 +813,9 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') ping();
   });
-})();
 
+
+  
 // ===== Password Reset page support =====
 (function initPasswordReset(){
   // работает на любой странице, но активируется только на /reset?token=...
@@ -877,6 +878,7 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
     }
   });
 })();
+
 
 
 
