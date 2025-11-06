@@ -889,19 +889,11 @@ window.isBeforeTomorrowWarsaw = isBeforeTomorrowWarsaw;
         msg.textContent = '✅ Hasło zostało zmienione. Możesz się zalogować.';
         msg.classList.add('ok');
         setTimeout(close, 1200);
-      } catch (err) {
+      } 
+      catch (err) {
         msg.textContent = err.message || '❌ Błąd zmiany hasła.';
         msg.classList.add('error');
       }
     });
   });
 })();
-
-
-
-
-
-
-
-
-
