@@ -77,7 +77,7 @@ window.addEventListener('DOMContentLoaded', () => {
           localStorage.getItem('access_token') ||
           sessionStorage.getItem('access_token');
         if (token) {
-          endpoint = '/api/password/change';
+          endpoint = '/api/password/change-before-login';
           body = { stare_haslo: oldP, nowe_haslo: newP };
         }
 
